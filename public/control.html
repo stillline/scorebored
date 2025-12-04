@@ -74,6 +74,70 @@
             border-color: #f44336;
         }
 
+        .color-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .color-picker {
+            width: 60px;
+            height: 40px;
+            border: 2px solid #555;
+            border-radius: 6px;
+            background: none;
+            cursor: pointer;
+        }
+
+        .color-picker:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+
+        .team-section.right .color-picker:focus {
+            border-color: #f44336;
+        }
+
+        .color-presets {
+            background: #2a2a2a;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .presets-header {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #fff;
+        }
+
+        .preset-colors {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(40px, 1fr));
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .preset-color {
+            width: 40px;
+            height: 40px;
+            border-radius: 6px;
+            border: 2px solid #555;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .preset-color:hover {
+            border-color: #fff;
+        }
+
+        .preset-color.selected {
+            border-color: #4CAF50;
+            border-width: 3px;
+        }
+
         .score-controls {
             display: flex;
             align-items: center;
@@ -172,11 +236,34 @@
     <div class="container">
         <h1>Scoreboard Control</h1>
         
+        <div class="color-presets">
+            <div class="presets-header">Team Color Presets</div>
+            <div class="preset-colors" id="presetColors">
+                <!-- Preset colors will be populated by JavaScript -->
+            </div>
+        </div>
+        
+        <div class="color-presets">
+            <div class="presets-header">Global Colors</div>
+            <div class="color-controls">
+                <label>Text Color:</label>
+                <input type="color" class="color-picker" id="textColorPicker" value="#ffffff">
+            </div>
+            <div class="color-controls">
+                <label>Background Bar:</label>
+                <input type="color" class="color-picker" id="backgroundColorPicker" value="#808080">
+            </div>
+        </div>
+        
         <div class="team-section">
             <div class="team-header">
                 <span class="team-label">Left Team</span>
             </div>
-            <input type="text" class="team-name-input" id="leftTeamInput" placeholder="Team name" maxlength="20">
+            <input type="text" class="team-name-input" id="leftTeamInput" placeholder="Team name" maxlength="16">
+            <div class="color-controls">
+                <label>Color:</label>
+                <input type="color" class="color-picker" id="leftColorPicker" value="#2E7D32">
+            </div>
             <div class="score-controls">
                 <button class="score-button minus" onclick="updateScore('left', -1)">-</button>
                 <div class="score-display" id="leftScore">0</div>
@@ -188,7 +275,11 @@
             <div class="team-header">
                 <span class="team-label">Right Team</span>
             </div>
-            <input type="text" class="team-name-input" id="rightTeamInput" placeholder="Team name" maxlength="20">
+            <input type="text" class="team-name-input" id="rightTeamInput" placeholder="Team name" maxlength="16">
+            <div class="color-controls">
+                <label>Color:</label>
+                <input type="color" class="color-picker" id="rightColorPicker" value="#B71C1C">
+            </div>
             <div class="score-controls">
                 <button class="score-button minus" onclick="updateScore('right', -1)">-</button>
                 <div class="score-display" id="rightScore">0</div>
@@ -213,6 +304,86 @@
         const leftScoreEl = document.getElementById('leftScore');
         const rightScoreEl = document.getElementById('rightScore');
         const statusEl = document.getElementById('status');
+        const leftColorPicker = document.getElementById('leftColorPicker');
+        const rightColorPicker = document.getElementById('rightColorPicker');
+        const textColorPicker = document.getElementById('textColorPicker');
+        const backgroundColorPicker = document.getElementById('backgroundColorPicker');
+        const presetColorsEl = document.getElementById('presetColors');
+        
+        // Preset colors for bicycle polo teams
+        const colorPresets = [
+            '#2E7D32', '#B71C1C', '#1976D2', '#FF8F00', 
+            '#7B1FA2', '#D32F2F', '#388E3C', '#F57C00',
+            '#512DA8', '#1565C0', '#00796B', '#795548',
+            '#455A64', '#E64A19', '#C2185B', '#8E24AA'
+        ];
+        
+        // Load saved colors from localStorage
+        let savedColors = JSON.parse(localStorage.getItem('scoreboardColors')) || [];
+        
+        function initializeColorPresets() {
+            presetColorsEl.innerHTML = '';
+            
+            // Add saved colors first
+            savedColors.forEach((color, index) => {
+                addPresetColor(color, true, index);
+            });
+            
+            // Add default presets
+            colorPresets.forEach(color => {
+                if (!savedColors.includes(color)) {
+                    addPresetColor(color, false);
+                }
+            });
+        }
+        
+        function addPresetColor(color, isSaved, savedIndex) {
+            const colorDiv = document.createElement('div');
+            colorDiv.className = 'preset-color';
+            colorDiv.style.backgroundColor = color;
+            colorDiv.title = color;
+            
+            colorDiv.addEventListener('click', () => {
+                // Apply to currently selected color picker or last focused one
+                if (document.activeElement === leftColorPicker || lastFocusedPicker === 'left') {
+                    leftColorPicker.value = color;
+                    updateTeamColor('left', color);
+                } else {
+                    rightColorPicker.value = color;
+                    updateTeamColor('right', color);
+                }
+            });
+            
+            if (isSaved && savedIndex !== undefined) {
+                // Add delete functionality for saved colors
+                colorDiv.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    if (confirm('Remove this color from saved presets?')) {
+                        savedColors.splice(savedIndex, 1);
+                        localStorage.setItem('scoreboardColors', JSON.stringify(savedColors));
+                        initializeColorPresets();
+                    }
+                });
+            }
+            
+            presetColorsEl.appendChild(colorDiv);
+        }
+        
+        let lastFocusedPicker = 'left';
+        
+        function saveCurrentColor(color) {
+            if (!savedColors.includes(color)) {
+                savedColors.unshift(color); // Add to beginning
+                if (savedColors.length > 8) savedColors.pop(); // Keep only 8 saved colors
+                localStorage.setItem('scoreboardColors', JSON.stringify(savedColors));
+                initializeColorPresets();
+            }
+        }
+        
+        function updateTeamColor(side, color) {
+            socket.emit('updateTeamColor', { side, color });
+            saveCurrentColor(color);
+        }
         
         socket.on('connect', () => {
             statusEl.textContent = 'Connected';
@@ -229,6 +400,19 @@
             rightTeamInput.value = gameState.rightTeam;
             leftScoreEl.textContent = gameState.leftScore;
             rightScoreEl.textContent = gameState.rightScore;
+            
+            if (gameState.leftColor) {
+                leftColorPicker.value = gameState.leftColor;
+            }
+            if (gameState.rightColor) {
+                rightColorPicker.value = gameState.rightColor;
+            }
+            if (gameState.textColor) {
+                textColorPicker.value = gameState.textColor;
+            }
+            if (gameState.backgroundColor) {
+                backgroundColorPicker.value = gameState.backgroundColor;
+            }
         });
         
         leftTeamInput.addEventListener('input', (e) => {
@@ -237,6 +421,42 @@
         
         rightTeamInput.addEventListener('input', (e) => {
             socket.emit('updateTeamName', { side: 'right', name: e.target.value });
+        });
+        
+        // Color picker event listeners
+        leftColorPicker.addEventListener('change', (e) => {
+            updateTeamColor('left', e.target.value);
+        });
+        
+        rightColorPicker.addEventListener('change', (e) => {
+            updateTeamColor('right', e.target.value);
+        });
+        
+        leftColorPicker.addEventListener('focus', () => {
+            lastFocusedPicker = 'left';
+        });
+        
+        rightColorPicker.addEventListener('focus', () => {
+            lastFocusedPicker = 'right';
+        });
+        
+        // Use change event only (fires when user finishes selecting)
+        textColorPicker.addEventListener('change', (e) => {
+            try {
+                console.log('Sending text color update:', e.target.value);
+                socket.emit('updateGlobalColor', { type: 'text', color: e.target.value });
+            } catch (error) {
+                console.error('Error sending text color:', error);
+            }
+        });
+        
+        backgroundColorPicker.addEventListener('change', (e) => {
+            try {
+                console.log('Sending background color update:', e.target.value);
+                socket.emit('updateGlobalColor', { type: 'background', color: e.target.value });
+            } catch (error) {
+                console.error('Error sending background color:', error);
+            }
         });
         
         function updateScore(side, change) {
@@ -252,6 +472,9 @@
                 socket.emit('resetGame');
             }
         }
+        
+        // Initialize color presets when page loads
+        initializeColorPresets();
     </script>
 </body>
 </html>
