@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scoreboard Control</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a1a;
+            color: white;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #fff;
+        }
+
+        .team-section {
+            background: #2a2a2a;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #4CAF50;
+        }
+
+        .team-section.right {
+            border-left-color: #f44336;
+        }
+
+        .team-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .team-label {
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .team-name-input {
+            background: #3a3a3a;
+            border: 2px solid #555;
+            border-radius: 8px;
+            color: white;
+            padding: 12px;
+            font-size: 16px;
+            width: 100%;
+            margin-bottom: 15px;
+        }
+
+        .team-name-input:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+
+        .team-section.right .team-name-input:focus {
+            border-color: #f44336;
+        }
+
+        .score-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .score-display {
+            font-size: 48px;
+            font-weight: bold;
+            min-width: 80px;
+            text-align: center;
+            background: #3a3a3a;
+            border-radius: 12px;
+            padding: 10px;
+        }
+
+        .score-button {
+            background: #4CAF50;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            width: 60px;
+            height: 60px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            user-select: none;
+        }
+
+        .score-button:hover {
+            background: #45a049;
+        }
+
+        .score-button:active {
+            transform: scale(0.95);
+        }
+
+        .score-button.minus {
+            background: #f44336;
+        }
+
+        .score-button.minus:hover {
+            background: #da190b;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+        }
+
+        .action-button {
+            flex: 1;
+            background: #666;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            padding: 15px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .action-button:hover {
+            background: #777;
+        }
+
+        .action-button.reset {
+            background: #ff9800;
+        }
+
+        .action-button.reset:hover {
+            background: #f57c00;
+        }
+
+        .status {
+            text-align: center;
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 8px;
+            background: #2a2a2a;
+        }
+
+        .status.connected {
+            background: #1b5e20;
+        }
+
+        .status.disconnected {
+            background: #c62828;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Scoreboard Control</h1>
+        
+        <div class="team-section">
+            <div class="team-header">
+                <span class="team-label">Left Team</span>
+            </div>
+            <input type="text" class="team-name-input" id="leftTeamInput" placeholder="Team name" maxlength="20">
+            <div class="score-controls">
+                <button class="score-button minus" onclick="updateScore('left', -1)">-</button>
+                <div class="score-display" id="leftScore">0</div>
+                <button class="score-button" onclick="updateScore('left', 1)">+</button>
+            </div>
+        </div>
+
+        <div class="team-section right">
+            <div class="team-header">
+                <span class="team-label">Right Team</span>
+            </div>
+            <input type="text" class="team-name-input" id="rightTeamInput" placeholder="Team name" maxlength="20">
+            <div class="score-controls">
+                <button class="score-button minus" onclick="updateScore('right', -1)">-</button>
+                <div class="score-display" id="rightScore">0</div>
+                <button class="score-button" onclick="updateScore('right', 1)">+</button>
+            </div>
+        </div>
+
+        <div class="action-buttons">
+            <button class="action-button" onclick="swapSides()">Swap Sides</button>
+            <button class="action-button reset" onclick="resetGame()">Reset Game</button>
+        </div>
+
+        <div class="status" id="status">Connecting...</div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        
+        const leftTeamInput = document.getElementById('leftTeamInput');
+        const rightTeamInput = document.getElementById('rightTeamInput');
+        const leftScoreEl = document.getElementById('leftScore');
+        const rightScoreEl = document.getElementById('rightScore');
+        const statusEl = document.getElementById('status');
+        
+        socket.on('connect', () => {
+            statusEl.textContent = 'Connected';
+            statusEl.className = 'status connected';
+        });
+        
+        socket.on('disconnect', () => {
+            statusEl.textContent = 'Disconnected';
+            statusEl.className = 'status disconnected';
+        });
+        
+        socket.on('gameUpdate', (gameState) => {
+            leftTeamInput.value = gameState.leftTeam;
+            rightTeamInput.value = gameState.rightTeam;
+            leftScoreEl.textContent = gameState.leftScore;
+            rightScoreEl.textContent = gameState.rightScore;
+        });
+        
+        leftTeamInput.addEventListener('input', (e) => {
+            socket.emit('updateTeamName', { side: 'left', name: e.target.value });
+        });
+        
+        rightTeamInput.addEventListener('input', (e) => {
+            socket.emit('updateTeamName', { side: 'right', name: e.target.value });
+        });
+        
+        function updateScore(side, change) {
+            socket.emit('updateScore', { side, change });
+        }
+        
+        function swapSides() {
+            socket.emit('swapSides');
+        }
+        
+        function resetGame() {
+            if (confirm('Reset scores to 0-0?')) {
+                socket.emit('resetGame');
+            }
+        }
+    </script>
+</body>
+</html>
