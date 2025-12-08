@@ -1,0 +1,39 @@
+[Unit]
+Description=ATEM Switcher Display Service - Scoreboard for Broadcasting
+Documentation=file:///home/matthew/bin/scorebored/DISPLAY_SETUP.md
+After=network-online.target multi-user.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=matthew
+Group=matthew
+Environment=DISPLAY=:0
+Environment=HOME=/home/matthew
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+WorkingDirectory=/home/matthew/bin/scorebored
+
+# Wait for network and scoreboard server to be ready
+ExecStartPre=/bin/bash -c 'echo "Waiting for network..."; until ping -c1 127.0.0.1 >/dev/null 2>&1; do sleep 1; done'
+ExecStartPre=/bin/bash -c 'echo "Waiting for scoreboard server..."; until curl -sf http://localhost:3000/ >/dev/null 2>&1; do sleep 2; done'
+
+# Start the ATEM display
+ExecStart=/home/matthew/bin/scorebored/start-atem-display.sh
+
+# Restart policy for reliability
+Restart=always
+RestartSec=10
+KillMode=mixed
+TimeoutStopSec=30
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=atem-display
+
+# Resource limits
+MemoryMax=1G
+CPUQuota=80%
+
+[Install]
+WantedBy=multi-user.target
