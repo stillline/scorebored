@@ -230,31 +230,224 @@
         .status.disconnected {
             background: #c62828;
         }
+
+        /* Commercial Break Section */
+        .commercial-section {
+            background: #2a2a2a;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #9c27b0;
+        }
+
+        .commercial-header {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #fff;
+        }
+
+        .video-selector {
+            background: #3a3a3a;
+            border: 2px solid #555;
+            border-radius: 8px;
+            color: white;
+            padding: 12px;
+            font-size: 16px;
+            width: 100%;
+            margin-bottom: 15px;
+            cursor: pointer;
+        }
+
+        .video-selector:focus {
+            outline: none;
+            border-color: #9c27b0;
+        }
+
+        .commercial-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .commercial-button {
+            background: #9c27b0;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            padding: 12px 24px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            flex: 1;
+        }
+
+        .commercial-button:hover {
+            background: #8e24aa;
+        }
+
+        .commercial-button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        .commercial-button.stop {
+            background: #f44336;
+        }
+
+        .commercial-button.stop:hover {
+            background: #da190b;
+        }
+
+        .commercial-status {
+            flex: 1;
+            text-align: center;
+            font-weight: bold;
+            padding: 12px;
+            border-radius: 8px;
+            background: #3a3a3a;
+        }
+
+        .commercial-status.active {
+            background: #9c27b0;
+        }
+
+        /* ATEM Control Section */
+        .atem-section {
+            background: #2a2a2a;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #ff5722;
+        }
+
+        .atem-header {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #fff;
+        }
+
+        .atem-status-row {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .atem-status {
+            flex: 1;
+            text-align: center;
+            font-weight: bold;
+            padding: 12px;
+            border-radius: 8px;
+            background: #c62828;
+        }
+
+        .atem-status.connected {
+            background: #2e7d32;
+        }
+
+        .atem-button {
+            background: #ff5722;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            padding: 12px 20px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .atem-button:hover {
+            background: #e64a19;
+        }
+
+        .atem-button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        .atem-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .input-controls label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        .input-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .input-button {
+            background: #666;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            width: 50px;
+            height: 40px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .input-button:hover {
+            background: #777;
+        }
+
+        .input-button.active {
+            background: #ff5722;
+        }
+
+        .input-button.graphics {
+            background: #4caf50;
+            width: 80px;
+        }
+
+        .input-button.graphics:hover {
+            background: #45a049;
+        }
+
+        .key-controls {
+            display: flex;
+            align-items: center;
+        }
+
+        .key-button {
+            background: #666;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            padding: 12px 20px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .key-button:hover {
+            background: #777;
+        }
+
+        .key-button.active {
+            background: #4caf50;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Scoreboard Control</h1>
-        
-        <div class="color-presets">
-            <div class="presets-header">Team Color Presets</div>
-            <div class="preset-colors" id="presetColors">
-                <!-- Preset colors will be populated by JavaScript -->
-            </div>
-        </div>
-        
-        <div class="color-presets">
-            <div class="presets-header">Global Colors</div>
-            <div class="color-controls">
-                <label>Text Color:</label>
-                <input type="color" class="color-picker" id="textColorPicker" value="#ffffff">
-            </div>
-            <div class="color-controls">
-                <label>Background Bar:</label>
-                <input type="color" class="color-picker" id="backgroundColorPicker" value="#808080">
-            </div>
-        </div>
-        
+        <h1>Scorebored</h1>
+
         <div class="team-section">
             <div class="team-header">
                 <span class="team-label">Left Team</span>
@@ -292,6 +485,60 @@
             <button class="action-button reset" onclick="resetGame()">Reset Game</button>
         </div>
 
+        <div class="commercial-section">
+            <div class="commercial-header">Commercial Break</div>
+            <select class="video-selector" id="videoSelector">
+                <option value="">Loading videos...</option>
+            </select>
+            <div class="commercial-controls">
+                <button class="commercial-button" id="startCommercialBtn" onclick="startCommercialBreak()" disabled>Start Break</button>
+                <button class="commercial-button stop" id="stopCommercialBtn" onclick="stopCommercialBreak()" disabled>Stop Break</button>
+                <div class="commercial-status" id="commercialStatus">Ready</div>
+            </div>
+        </div>
+
+        <div class="atem-section">
+            <div class="atem-header">ATEM Switcher Control</div>
+            <div class="atem-status-row">
+                <div class="atem-status" id="atemStatus">Disconnected</div>
+            </div>
+            <div class="atem-controls">
+                <div class="input-controls">
+                    <label>Switch to Input:</label>
+                    <div class="input-buttons">
+                        <button class="input-button graphics" onclick="switchInput(1)">Graphics</button>
+                        <button class="input-button" onclick="switchInput(2)">2</button>
+                        <button class="input-button" onclick="switchInput(3)">3</button>
+                        <button class="input-button" onclick="switchInput(4)">4</button>
+                        <button class="input-button" onclick="switchInput(5)">5</button>
+                        <button class="input-button" onclick="switchInput(6)">6</button>
+                    </div>
+                </div>
+                <div class="key-controls">
+                    <button class="key-button" id="downstreamKeyBtn" onclick="toggleDownstreamKey()">Downstream Key: OFF</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="color-presets">
+            <div class="presets-header">Team Color Presets</div>
+            <div class="preset-colors" id="presetColors">
+                <!-- Preset colors will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <div class="color-presets">
+            <div class="presets-header">Global Colors</div>
+            <div class="color-controls">
+                <label>Text Color:</label>
+                <input type="color" class="color-picker" id="textColorPicker" value="#ffffff">
+            </div>
+            <div class="color-controls">
+                <label>Background Bar:</label>
+                <input type="color" class="color-picker" id="backgroundColorPicker" value="#808080">
+            </div>
+        </div>
+
         <div class="status" id="status">Connecting...</div>
     </div>
 
@@ -309,6 +556,12 @@
         const textColorPicker = document.getElementById('textColorPicker');
         const backgroundColorPicker = document.getElementById('backgroundColorPicker');
         const presetColorsEl = document.getElementById('presetColors');
+        const videoSelector = document.getElementById('videoSelector');
+        const startCommercialBtn = document.getElementById('startCommercialBtn');
+        const stopCommercialBtn = document.getElementById('stopCommercialBtn');
+        const commercialStatus = document.getElementById('commercialStatus');
+        const atemStatus = document.getElementById('atemStatus');
+        const downstreamKeyBtn = document.getElementById('downstreamKeyBtn');
         
         // Preset colors for bicycle polo teams
         const colorPresets = [
@@ -320,6 +573,125 @@
         
         // Load saved colors from localStorage
         let savedColors = JSON.parse(localStorage.getItem('scoreboardColors')) || [];
+
+        // Commercial break functionality
+        async function loadAvailableVideos() {
+            try {
+                const response = await fetch('/api/videos');
+                const videos = await response.json();
+
+                videoSelector.innerHTML = '';
+
+                if (videos.length === 0) {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = 'No videos found (add MP4 files to public/videos/)';
+                    option.disabled = true;
+                    videoSelector.appendChild(option);
+                    startCommercialBtn.disabled = true;
+                } else {
+                    // Add default option
+                    const defaultOption = document.createElement('option');
+                    defaultOption.value = '';
+                    defaultOption.textContent = 'Select a video...';
+                    videoSelector.appendChild(defaultOption);
+
+                    // Add video options
+                    videos.forEach(video => {
+                        const option = document.createElement('option');
+                        option.value = video.path;
+                        option.textContent = video.name;
+                        videoSelector.appendChild(option);
+                    });
+
+                    updateCommercialButtons();
+                }
+            } catch (error) {
+                console.error('Error loading videos:', error);
+                videoSelector.innerHTML = '<option value="" disabled>Error loading videos</option>';
+                startCommercialBtn.disabled = true;
+            }
+        }
+
+        function updateCommercialButtons() {
+            const hasVideoSelected = videoSelector.value !== '';
+            startCommercialBtn.disabled = !hasVideoSelected;
+        }
+
+        function startCommercialBreak() {
+            const selectedVideo = videoSelector.value;
+            if (selectedVideo) {
+                socket.emit('startCommercialBreak', { videoPath: selectedVideo });
+            }
+        }
+
+        function stopCommercialBreak() {
+            socket.emit('stopCommercialBreak');
+        }
+
+        // ATEM Control Functions
+        function connectAtem() {
+            console.log('Requesting ATEM connection...');
+            socket.emit('atemConnect');
+        }
+
+        function switchInput(inputNumber) {
+            console.log(`Switching to input: ${inputNumber}`);
+            socket.emit('atemSwitchInput', { input: inputNumber });
+        }
+
+        function toggleDownstreamKey() {
+            console.log('Toggling downstream key...');
+            socket.emit('atemToggleDownstreamKey');
+        }
+
+        function updateAtemStatus(gameState) {
+            if (gameState.atemStatus) {
+                const atemConnected = gameState.atemStatus.connected;
+
+                // Update status display
+                atemStatus.textContent = atemConnected ? 'Connected' : 'Disconnected';
+                atemStatus.className = atemConnected ? 'atem-status connected' : 'atem-status';
+
+                // Update input buttons
+                const inputButtons = document.querySelectorAll('.input-button');
+                inputButtons.forEach(btn => {
+                    btn.classList.remove('active');
+                    btn.disabled = !atemConnected;
+                });
+
+                if (atemConnected && gameState.atemStatus.currentInput) {
+                    const activeBtn = document.querySelector(`.input-button[onclick="switchInput(${gameState.atemStatus.currentInput})"]`);
+                    if (activeBtn) {
+                        activeBtn.classList.add('active');
+                    }
+                }
+
+                // Update downstream key button
+                downstreamKeyBtn.disabled = !atemConnected;
+                if (atemConnected) {
+                    const keyEnabled = gameState.atemStatus.downstreamKeyEnabled;
+                    downstreamKeyBtn.textContent = `Downstream Key: ${keyEnabled ? 'ON' : 'OFF'}`;
+                    downstreamKeyBtn.className = keyEnabled ? 'key-button active' : 'key-button';
+                }
+            }
+        }
+
+        function updateCommercialStatus(gameState) {
+            if (gameState.commercialBreak && gameState.commercialBreak.active) {
+                commercialStatus.textContent = 'Commercial Playing';
+                commercialStatus.classList.add('active');
+                startCommercialBtn.disabled = true;
+                stopCommercialBtn.disabled = false;
+                videoSelector.disabled = true;
+            } else {
+                commercialStatus.textContent = 'Ready';
+                commercialStatus.classList.remove('active');
+                stopCommercialBtn.disabled = true;
+                videoSelector.disabled = false;
+                updateCommercialButtons();
+            }
+        }
         
         function initializeColorPresets() {
             presetColorsEl.innerHTML = '';
@@ -386,21 +758,24 @@
         }
         
         socket.on('connect', () => {
+            console.log('🔌 Socket connected');
             statusEl.textContent = 'Connected';
             statusEl.className = 'status connected';
         });
-        
+
         socket.on('disconnect', () => {
+            console.log('❌ Socket disconnected');
             statusEl.textContent = 'Disconnected';
             statusEl.className = 'status disconnected';
         });
         
         socket.on('gameUpdate', (gameState) => {
+            console.log('📡 Received game update:', gameState);
             leftTeamInput.value = gameState.leftTeam;
             rightTeamInput.value = gameState.rightTeam;
             leftScoreEl.textContent = gameState.leftScore;
             rightScoreEl.textContent = gameState.rightScore;
-            
+
             if (gameState.leftColor) {
                 leftColorPicker.value = gameState.leftColor;
             }
@@ -413,6 +788,12 @@
             if (gameState.backgroundColor) {
                 backgroundColorPicker.value = gameState.backgroundColor;
             }
+
+            // Update commercial break status
+            updateCommercialStatus(gameState);
+
+            // Update ATEM status
+            updateAtemStatus(gameState);
         });
         
         leftTeamInput.addEventListener('input', (e) => {
@@ -460,6 +841,7 @@
         });
         
         function updateScore(side, change) {
+            console.log('📱 Sending score update:', side, change);
             socket.emit('updateScore', { side, change });
         }
         
@@ -473,8 +855,12 @@
             }
         }
         
-        // Initialize color presets when page loads
+        // Video selector event listener
+        videoSelector.addEventListener('change', updateCommercialButtons);
+
+        // Initialize when page loads
         initializeColorPresets();
+        loadAvailableVideos();
     </script>
 </body>
 </html>

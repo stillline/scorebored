@@ -62,6 +62,64 @@
             text-stroke: 2px #ffffff;
             background: #2E7D32;
         }
+
+        /* Commercial Break Video Overlay */
+        .commercial-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .commercial-overlay.active {
+            display: flex;
+        }
+
+        .commercial-video {
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain;
+            background: #000000;
+            pointer-events: none;
+        }
+
+        .commercial-video::-webkit-media-controls {
+            display: none !important;
+        }
+
+        .commercial-video::-webkit-media-controls-panel {
+            display: none !important;
+        }
+
+        .commercial-video::-webkit-media-controls-play-button {
+            display: none !important;
+        }
+
+        .commercial-video::-webkit-media-controls-start-playback-button {
+            display: none !important;
+        }
+
+        .commercial-video::-webkit-media-controls-volume-slider {
+            display: none !important;
+        }
+
+        .commercial-video::-webkit-media-controls-mute-button {
+            display: none !important;
+        }
+
+        .commercial-video::-webkit-media-controls-timeline {
+            display: none !important;
+        }
+
+        .commercial-video::-webkit-media-controls-fullscreen-button {
+            display: none !important;
+        }
     </style>
 </head>
 <body>
@@ -72,6 +130,13 @@
         <div class="team-name" id="rightTeam">Team 2</div>
     </div>
 
+    <!-- Commercial Break Video Overlay -->
+    <div class="commercial-overlay" id="commercialOverlay">
+        <video class="commercial-video" id="commercialVideo" autoplay playsinline disablepictureinpicture controlslist="nodownload nofullscreen noremoteplayback">
+            Your browser does not support the video tag.
+        </video>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
@@ -80,6 +145,8 @@
         const rightTeamEl = document.getElementById('rightTeam');
         const leftScoreEl = document.getElementById('leftScore');
         const rightScoreEl = document.getElementById('rightScore');
+        const commercialOverlayEl = document.getElementById('commercialOverlay');
+        const commercialVideoEl = document.getElementById('commercialVideo');
         
         function hexToRgba(hex, alpha = 1.0) {
             const r = parseInt(hex.slice(1, 3), 16);
@@ -111,26 +178,87 @@
             element.style.fontSize = fontSize + 'px';
             document.body.removeChild(temp);
         }
-        
+
+        function startCommercialBreak(videoPath) {
+            console.log('Starting commercial break with video:', videoPath);
+
+            // Configure video element for clean playback
+            commercialVideoEl.src = videoPath;
+            commercialVideoEl.muted = false; // Enable audio
+            commercialVideoEl.controls = false; // No controls
+            commercialVideoEl.style.pointerEvents = 'none'; // Disable all interactions
+
+            commercialOverlayEl.classList.add('active');
+            isCommercialActive = true;
+
+            // Hide the video when it ends and return to scoreboard
+            commercialVideoEl.addEventListener('ended', () => {
+                stopCommercialBreak(true); // Video ended naturally, notify server
+            }, { once: true });
+
+            // Handle video errors
+            commercialVideoEl.addEventListener('error', (e) => {
+                console.error('Video error:', e);
+                stopCommercialBreak(true); // Video error, notify server
+            }, { once: true });
+
+            // Play the video (required for audio to work)
+            commercialVideoEl.play().catch(e => {
+                console.error('Video play error:', e);
+            });
+        }
+
+        let isCommercialActive = false;
+
+        function stopCommercialBreak(notifyServer = true) {
+            console.log('Stopping commercial break, notifyServer:', notifyServer);
+            commercialOverlayEl.classList.remove('active');
+            commercialVideoEl.src = '';
+            commercialVideoEl.pause();
+
+            // Only notify server if we're the one ending the commercial (video ended naturally)
+            // Don't notify if we're responding to a server state update
+            if (notifyServer && isCommercialActive) {
+                console.log('Notifying server that commercial break ended');
+                socket.emit('stopCommercialBreak');
+            }
+            isCommercialActive = false;
+        }
+
         function updateDisplay(gameState) {
             console.log('Updating display with gameState:', gameState);
-            
+
+            // Handle commercial break state
+            if (gameState.commercialBreak) {
+                if (gameState.commercialBreak.active && gameState.commercialBreak.videoPath) {
+                    // Only start commercial if we're not already playing this video
+                    if (!isCommercialActive) {
+                        console.log('🎬 Starting new commercial break');
+                        startCommercialBreak(gameState.commercialBreak.videoPath);
+                    }
+                } else if (!gameState.commercialBreak.active && isCommercialActive) {
+                    // Only stop if we're currently playing
+                    console.log('🎬 Stopping commercial break - server ended it');
+                    stopCommercialBreak(false); // Server told us to stop, don't notify server again
+                }
+            }
+
             leftTeamEl.textContent = gameState.leftTeam;
             rightTeamEl.textContent = gameState.rightTeam;
             leftScoreEl.textContent = gameState.leftScore;
             rightScoreEl.textContent = gameState.rightScore;
-            
+
             // Adjust text size for team names
             adjustTextSize(leftTeamEl);
             adjustTextSize(rightTeamEl);
-            
+
             if (gameState.leftColor) {
                 leftScoreEl.style.background = hexToRgba(gameState.leftColor);
             }
             if (gameState.rightColor) {
                 rightScoreEl.style.background = hexToRgba(gameState.rightColor);
             }
-            
+
             console.log('Applying text color:', gameState.textColor);
             if (gameState.textColor) {
                 leftTeamEl.style.setProperty('color', gameState.textColor, 'important');
@@ -138,7 +266,7 @@
                 leftScoreEl.style.setProperty('color', gameState.textColor, 'important');
                 rightScoreEl.style.setProperty('color', gameState.textColor, 'important');
             }
-            
+
             console.log('Applying background color:', gameState.backgroundColor);
             if (gameState.backgroundColor) {
                 const scoreboard = document.querySelector('.scoreboard');

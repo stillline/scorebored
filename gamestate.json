@@ -1,10 +1,21 @@
 {
   "leftTeam": "Dead Rappers",
   "rightTeam": "Pantheon",
-  "leftScore": 5,
-  "rightScore": 2,
+  "leftScore": 6,
+  "rightScore": 3,
   "leftColor": "#0f68db",
   "rightColor": "#1fc7bb",
   "textColor": "#ffffff",
-  "backgroundColor": "#838181"
+  "backgroundColor": "#5e5e5e",
+  "commercialBreak": {
+    "active": false,
+    "videoPath": "",
+    "startTime": null
+  },
+  "atemStatus": {
+    "connected": true,
+    "ip": "10.42.0.100",
+    "currentInput": 2,
+    "downstreamKeyEnabled": true
+  }
 }

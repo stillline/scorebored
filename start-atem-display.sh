@@ -21,12 +21,12 @@ sleep 2
 export DISPLAY=:0
 
 # Check if X server is running and accessible
-if ! pgrep -x "X" > /dev/null; then
-    echo "❌ X server not running - cannot start display"
+if ! pgrep -x "Xwayland" > /dev/null; then
+    echo "❌ Xwayland not running - cannot start display"
     echo "   Run this from a local session or start X server manually"
     exit 1
 else
-    echo "✅ X server is running"
+    echo "✅ Xwayland is running"
 fi
 
 # Wait for display to be available with timeout
@@ -50,8 +50,9 @@ fi
 # Configure display settings for optimal ATEM capture
 echo "Configuring display settings..."
 
-# Hide cursor immediately
-unclutter -idle 0.1 -root &
+# Move cursor to bottom-right corner to keep it out of the way
+echo "Moving cursor to bottom-right corner..."
+sudo python3 ./move-cursor.py
 
 # Disable screen blanking and power management
 xset s off 2>/dev/null
@@ -60,6 +61,15 @@ xset s noblank 2>/dev/null
 
 # Set black background (good for keying)
 xsetroot -solid black 2>/dev/null
+
+# Configure audio output to HDMI for ATEM audio meters
+echo "Configuring audio output to HDMI..."
+export PULSE_DEFAULT_AUDIO_OUTPUT="vc4hdmi0"
+export ALSA_DEFAULT_AUDIO_OUTPUT="hw:0,0"
+
+# Set default audio output to HDMI 0 (change to hw:1,0 for HDMI 1 if needed)
+amixer cset numid=3 2 >/dev/null 2>&1 || true  # Force to HDMI
+pacmd set-default-sink alsa_output.platform-fef00700.hdmi.hdmi-stereo >/dev/null 2>&1 || true
 
 echo "Starting Chromium in kiosk mode for ATEM capture..."
 
@@ -90,6 +100,11 @@ chromium \
     --use-mock-keychain \
     --disable-password-manager-reauthentication \
     --disable-features=PasswordImport \
+    --enable-audio-service-api \
+    --disable-audio-input \
+    --disable-audio-input-capabilities \
+    --alsa-output-device=hw:0,0 \
+    --enable-aggressive-domstorage-flushing \
     http://localhost:3000/display &
 
 CHROMIUM_PID=$!
