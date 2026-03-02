@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#1a1a1a;color:#ddd;padding:8px;font-size:13px}
+        .container{max-width:600px;margin:0 auto}
+        h1{text-align:center;font-size:16px;margin-bottom:2px;color:#fff}
+        .nav{text-align:center;margin-bottom:6px;font-size:11px}
+        .nav a{color:#666;text-decoration:none}
+        .sec{background:#222;border-radius:5px;padding:6px 8px;margin-bottom:6px}
+        .sec-hdr{font-size:13px;font-weight:700;margin-bottom:4px;color:#fff;display:flex;align-items:center;gap:5px}
+        .badge{font-size:10px;padding:1px 6px;border-radius:6px;font-weight:400}
+        .bg{background:#2e7d32}.br{background:#c62828}.by{background:#f57f17;color:#000}.bx{background:#444}
+        .row{display:flex;flex-wrap:wrap;gap:2px 12px;font-size:11px}
+        .row .l{color:#666}.row .v{color:#ccc;font-weight:600}
+        .ac{background:#252525;border-radius:4px;padding:5px 6px;margin-bottom:4px;border-left:3px solid #444}
+        .ac.on{border-left-color:#4caf50}.ac.off{border-left-color:#c62828;opacity:.5}
+        .ac-hdr{display:flex;align-items:baseline;gap:6px;margin-bottom:3px}
+        .ac-name{font-weight:700;font-size:12px;color:#fff}
+        .ac-isp{font-size:10px;color:#777}
+        .sg{display:grid;grid-template-columns:repeat(auto-fit,minmax(75px,1fr));gap:2px}
+        .si{background:#1a1a1a;border-radius:3px;padding:2px 5px}
+        .si .k{font-size:9px;color:#555;text-transform:uppercase}
+        .si .n{font-size:14px;font-weight:700;color:#fff}
+        .si .n.sm{font-size:12px}
+        .si .u{font-size:9px;color:#444}
+        .mg{color:#4caf50}.my{color:#ffc107}.mr{color:#f44336}
+        .du{font-size:10px;color:#555;margin-top:2px}
+        .hf{display:inline-block;font-size:10px;padding:1px 6px;border-radius:6px;background:#2e7d32;margin:1px}
+        .hf.bad{background:#c62828}
+        .ss{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:2px;margin-top:3px}
+        .wifi-sec{border-left:3px solid #9c27b0}
+        .ir{display:flex;justify-content:space-between;align-items:center;padding:4px 6px;background:#252525;border-radius:4px;margin-bottom:3px;font-size:12px}
+        .ir.sel{cursor:pointer}.ir.sel:hover{background:#333}
+        .ir.sel.act{background:#3a2a4a;outline:1px solid #9c27b0}
+        .ir .nm{font-weight:600;color:#fff}.ir .tp{font-size:10px;color:#555;margin-left:3px}
+        .ir .st{font-size:10px}.ir .st.c{color:#4caf50}.ir .st.d{color:#666}
+        .ir .cn{font-size:10px;color:#777}
+        .ssid-item{padding:4px 6px;background:#252525;border-radius:4px;margin-bottom:3px;cursor:pointer;font-size:12px}
+        .ssid-item:hover{background:#333}
+        .ssid-sv{font-size:9px;color:#2196f3;margin-left:4px}
+        .btn{border:none;border-radius:4px;color:white;font-size:11px;font-weight:600;padding:4px 10px;cursor:pointer}
+        .btn:disabled{opacity:.3;cursor:not-allowed}
+        .btn-p{background:#9c27b0}.btn-o{background:#ff9800}.btn-g{background:#555}
+        .btn-row{display:flex;gap:4px;margin-top:4px}
+        .mo{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:100;justify-content:center;align-items:center}
+        .mo.active{display:flex}
+        .md{background:#222;border-radius:6px;padding:12px;max-width:340px;width:90%}
+        .md h3{font-size:13px;margin-bottom:8px}
+        .md input{width:100%;padding:6px;border-radius:4px;border:1px solid #444;background:#333;color:white;font-size:14px;margin-bottom:8px}
+        .md input:focus{outline:none;border-color:#9c27b0}
+        .spinner{display:inline-block;width:10px;height:10px;border:2px solid #444;border-top-color:#fff;border-radius:50%;animation:sp .8s linear infinite;vertical-align:middle;margin-right:3px}
+        @keyframes sp{to{transform:rotate(360deg)}}
+        .lm{text-align:center;padding:6px;color:#666;font-size:11px}
+        .sb{text-align:center;padding:3px;border-radius:3px;background:#222;margin-top:4px;font-size:10px;color:#555}
+        .sb.ok{background:#1b5e20;color:#aaa}.sb.err{background:#c62828;color:#ddd}
+        .toast{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);background:#333;color:white;padding:6px 12px;border-radius:5px;font-size:11px;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none}
+        .toast.show{opacity:1}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Network</h1>
+        <div class="nav" style="margin-bottom:8px;">
+            <a href="/control" style="background:#555;color:white;text-decoration:none;padding:6px 16px;border-radius:6px;font-weight:600;font-size:12px;">Scoreboard Control</a>
+        </div>
+
+        <div class="sec">
+            <div class="sec-hdr">Speedify <span class="badge bx" id="speedifyStateBadge">--</span></div>
+            <div class="row">
+                <span><span class="l">Server:</span> <span class="v" id="bannerServer">--</span></span>
+                <span><span class="l">Mode:</span> <span class="v" id="bannerMode">--</span></span>
+                <span><span class="l">IP:</span> <span class="v" id="bannerIP">--</span></span>
+            </div>
+        </div>
+
+        <div id="adapterCards"><div class="lm"><span class="spinner"></span>Waiting for stats...</div></div>
+
+        <div class="sec" id="streamHealthSection" style="display:none">
+            <div class="sec-hdr">Stream</div>
+            <div id="streamHealthFlags"></div>
+            <div class="ss" id="sessionStats"></div>
+            <div class="btn-row">
+                <button class="btn btn-o" id="streamTestBtn" onclick="runStreamTest()">Stream Test</button>
+                <button class="btn btn-g" onclick="refreshSpeedify()">Refresh</button>
+            </div>
+            <div id="streamTestResult" style="margin-top:4px;font-size:11px;color:#666"></div>
+        </div>
+
+        <div class="sec wifi-sec">
+            <div class="sec-hdr">WiFi</div>
+            <div id="interfaceList"><div class="lm"><span class="spinner"></span>Loading...</div></div>
+            <div id="wifiScanArea" style="display:none">
+                <div style="font-size:11px;color:#666;margin-bottom:3px">Scan: <strong id="scanIfaceName"></strong></div>
+                <div id="ssidList"></div>
+                <div class="btn-row" id="wifiActionRow" style="display:none">
+                    <button class="btn btn-g" id="reconnectBtn" onclick="reconnectPrevious()" style="display:none">Reconnect</button>
+                    <button class="btn btn-g" onclick="rescan()">Rescan</button>
+                </div>
+            </div>
+            <div class="btn-row"><button class="btn btn-p" onclick="loadInterfaces()">Refresh</button></div>
+        </div>
+        <div class="sb" id="socketStatus">Connecting...</div>
+    </div>
+
+    <div class="mo" id="passphraseModal">
+        <div class="md">
+            <h3>Connect: <span id="modalSSID"></span></h3>
+            <input type="password" id="passphraseInput" placeholder="Passphrase (blank=open)">
+            <div class="btn-row" style="justify-content:flex-end">
+                <button class="btn btn-g" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-p" onclick="submitPassphrase()">Connect</button>
+            </div>
+        </div>
+    </div>
+    <div class="toast" id="toast"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let selectedIface = null, previousConnection = '', pendingSSID = null;
+        let adapterData = {};       // from show adapters (isp, dataUsage, priority)
+        let adapterLiveStats = {};   // aggregated live stats per adapterID
+        let lastStreamingStats = null, lastSessionStats = null, speedifyInfoLoaded = false;
+
+        const statusBar = document.getElementById('socketStatus');
+        socket.on('connect', () => { statusBar.textContent = 'Connected'; statusBar.className = 'sb ok'; loadInterfaces(); if (!speedifyInfoLoaded) { loadSpeedifyInfo(); speedifyInfoLoaded = true; } });
+        socket.on('disconnect', () => { statusBar.textContent = 'Disconnected'; statusBar.className = 'sb err'; });
+
+        socket.on('speedifyStats', (data) => {
+            if (data.type === 'connection_stats' && data.connections) {
+                // Aggregate per adapterID: sum bandwidth, use tcp connection for quality metrics
+                const byAdapter = {};
+                data.connections.forEach(c => {
+                    const id = c.adapterID;
+                    if (!byAdapter[id]) {
+                        byAdapter[id] = { ...c, sendBps: 0, receiveBps: 0, anyConnected: false };
+                    }
+                    // Sum bandwidth across all connections (tcp + proxy)
+                    byAdapter[id].sendBps += (c.sendBps || 0);
+                    byAdapter[id].receiveBps += (c.receiveBps || 0);
+                    if (c.connected) byAdapter[id].anyConnected = true;
+                    // Use tcp connection for quality metrics (latency, MOS, jitter, loss, capacity)
+                    if (c.protocol === 'tcp') {
+                        byAdapter[id].latencyMs = c.latencyMs;
+                        byAdapter[id].jitterMs = c.jitterMs;
+                        byAdapter[id].lossReceive = c.lossReceive;
+                        byAdapter[id].mos = c.mos;
+                        byAdapter[id].sendEstimateMbps = c.sendEstimateMbps;
+                    }
+                });
+                Object.keys(byAdapter).forEach(id => { adapterLiveStats[id] = byAdapter[id]; });
+                renderAdapterCards();
+            } else if (data.type === 'streaming_stats') { lastStreamingStats = data; renderStreamHealth(); }
+            else if (data.type === 'session_stats') { lastSessionStats = data; renderSessionStats(); }
+        });
+
+        function loadSpeedifyInfo() {
+            socket.emit('getSpeedifyState', (res) => {
+                const b = document.getElementById('speedifyStateBadge');
+                if (res.error) { b.textContent = 'ERR'; b.className = 'badge br'; return; }
+                const s = typeof res.data === 'string' ? res.data : (res.data.state || JSON.stringify(res.data));
+                b.textContent = s;
+                b.className = 'badge ' + (s === 'CONNECTED' ? 'bg' : s === 'DISCONNECTED' ? 'br' : 'by');
+            });
+            socket.emit('getSpeedifyServer', (res) => {
+                if (res.error) return;
+                const d = res.data;
+                document.getElementById('bannerServer').textContent = (d.friendlyName || d.tag || '--') + (d.city ? ` (${d.city})` : '');
+                document.getElementById('bannerIP').textContent = d.publicIP || '--';
+            });
+            socket.emit('getSpeedifySettings', (res) => {
+                if (!res.error) document.getElementById('bannerMode').textContent = res.data.bondingMode || res.data.mode || '--';
+            });
+            socket.emit('getSpeedifyAdapters', (res) => {
+                if (res.error || !Array.isArray(res.data)) return;
+                res.data.forEach(a => { adapterData[a.adapterID] = a; });
+                renderAdapterCards();
+            });
+        }
+
+        function refreshSpeedify() { speedifyInfoLoaded = false; loadSpeedifyInfo(); showToast('Refreshing...'); }
+
+        function renderAdapterCards() {
+            const el = document.getElementById('adapterCards');
+            // Merge adapter IDs from both sources
+            const ids = new Set([...Object.keys(adapterData), ...Object.keys(adapterLiveStats)]);
+            if (!ids.size) return;
+            document.getElementById('streamHealthSection').style.display = '';
+
+            let html = '';
+            ids.forEach(id => {
+                if (id === 'speedify') return; // skip tunnel adapter
+                const info = adapterData[id] || {};
+                const live = adapterLiveStats[id] || {};
+                const on = live.anyConnected || (info.state === 'connected' && !info.offline);
+                const nm = info.name || id;
+                const isp = info.isp || '';
+                const dn = live.receiveBps != null ? (live.receiveBps * 8 / 1e6).toFixed(1) : '--';
+                const up = live.sendBps != null ? (live.sendBps * 8 / 1e6).toFixed(1) : '--';
+                const lat = live.latencyMs != null ? Math.round(live.latencyMs) : '--';
+                const jit = live.jitterMs != null ? live.jitterMs.toFixed(1) : '--';
+                const loss = live.lossReceive != null ? (live.lossReceive * 100).toFixed(1) : '--';
+                const mos = live.mos != null ? live.mos.toFixed(2) : '--';
+                const mc = live.mos != null ? (live.mos > 4 ? 'mg' : live.mos > 3 ? 'my' : 'mr') : '';
+                const cap = live.sendEstimateMbps != null ? live.sendEstimateMbps.toFixed(1) : '--';
+                const du = info.dataUsage;
+                const duStr = du ? `<div class="du">Today: ${fmtB(du.usageDaily)} | Month: ${fmtB(du.usageMonthly)}</div>` : '';
+                html += `<div class="ac ${on?'on':'off'}">
+                    <div class="ac-hdr"><span class="ac-name">${esc(nm)}</span>${isp?`<span class="ac-isp">${esc(isp)}</span>`:''}<span class="ac-isp">${esc(info.priority||'')}</span></div>
+                    <div class="sg">
+                        <div class="si"><div class="k">Down</div><div class="n">${dn}<span class="u"> Mbps</span></div></div>
+                        <div class="si"><div class="k">Up</div><div class="n">${up}<span class="u"> Mbps</span></div></div>
+                        <div class="si"><div class="k">Latency</div><div class="n sm">${lat}<span class="u"> ms</span></div></div>
+                        <div class="si"><div class="k">Jitter</div><div class="n sm">${jit}<span class="u"> ms</span></div></div>
+                        <div class="si"><div class="k">Loss</div><div class="n sm">${loss}<span class="u">%</span></div></div>
+                        <div class="si"><div class="k">MOS</div><div class="n ${mc}">${mos}</div></div>
+                        <div class="si"><div class="k">UL Cap</div><div class="n sm">${cap}<span class="u"> Mbps</span></div></div>
+                    </div>${duStr}</div>`;
+            });
+            el.innerHTML = html;
+        }
+
+        function renderStreamHealth() {
+            if (!lastStreamingStats) return;
+            const d = lastStreamingStats;
+            document.getElementById('streamHealthFlags').innerHTML =
+                [['CPU',d.badCpu],['Lat',d.badLatency],['Loss',d.badLoss],['Mem',d.badMemory]]
+                .map(([l,b]) => `<span class="hf ${b?'bad':''}">${l}:${b?'BAD':'OK'}</span>`).join('');
+        }
+
+        function renderSessionStats() {
+            if (!lastSessionStats) return;
+            const d = lastSessionStats, items = [];
+            if (d.totalReceivedBytes != null) items.push(['Tot Dn', fmtB(d.totalReceivedBytes)]);
+            if (d.totalSentBytes != null) items.push(['Tot Up', fmtB(d.totalSentBytes)]);
+            if (d.maxReceiveBps != null) items.push(['Max Dn', (d.maxReceiveBps*8/1e6).toFixed(1)+' Mbps']);
+            if (d.maxSendBps != null) items.push(['Max Up', (d.maxSendBps*8/1e6).toFixed(1)+' Mbps']);
+            if (d.bondingBenefit != null) items.push(['Bond', (d.bondingBenefit*100).toFixed(0)+'%']);
+            if (d.failoverCount != null) items.push(['Failover', d.failoverCount]);
+            document.getElementById('sessionStats').innerHTML = items.map(([l,v]) =>
+                `<div class="si"><div class="k">${l}</div><div class="n sm">${v}</div></div>`).join('');
+        }
+
+        function runStreamTest() {
+            const btn = document.getElementById('streamTestBtn'), res = document.getElementById('streamTestResult');
+            btn.disabled = true; btn.textContent = 'Testing...';
+            res.innerHTML = '<span class="spinner"></span>Running (~30s)...';
+            socket.emit('runStreamTest', (r) => {
+                btn.disabled = false; btn.textContent = 'Stream Test';
+                if (r.error) { res.textContent = 'Error: ' + r.error; return; }
+                // Result is an array; take first entry
+                const d = Array.isArray(r.data) ? r.data[0] : r.data;
+                if (!d || typeof d !== 'object') { res.textContent = String(r.data); return; }
+                const upMbps = d.uploadSpeed != null ? (d.uploadSpeed / 1e6).toFixed(1) : '--';
+                const dnMbps = d.downloadSpeed != null ? (d.downloadSpeed / 1e6).toFixed(1) : '--';
+                const lossStr = d.loss != null ? (d.loss * 100).toFixed(2) : '--';
+                res.innerHTML = [
+                    ['Up', `${upMbps} MB/s`],
+                    ['Dn', `${dnMbps} MB/s`],
+                    ['Lat', `${d.latency ?? '--'} ms`],
+                    ['Loss', `${lossStr}%`],
+                    ['Jitter', `${d.jitter ?? '--'} ms`],
+                    ['Conns', d.numConnections ?? '--'],
+                    ['Res', `${d.resolution ?? ''} ${d.fps ?? ''}fps`],
+                ].map(([l,v]) => `<b style="color:#fff">${l}:</b> <b style="color:#4caf50">${v}</b>`).join(' &nbsp;');
+            });
+        }
+
+        function loadInterfaces() {
+            const el = document.getElementById('interfaceList');
+            el.innerHTML = '<div class="lm"><span class="spinner"></span>Loading...</div>';
+            socket.emit('getInterfaces', (res) => {
+                if (res.error) { el.innerHTML = `<div class="lm" style="color:#f44336">${esc(res.error)}</div>`; return; }
+                el.innerHTML = res.interfaces.map(i => {
+                    const w = i.type === 'wifi';
+                    const sc = i.state.includes('connected') && i.connection ? 'c' : 'd';
+                    return `<div class="ir ${w?'sel':''}" ${w?`onclick="selectInterface('${esc(i.device)}')"`:''} data-device="${esc(i.device)}">
+                        <div><span class="nm">${esc(i.device)}</span><span class="tp">${esc(i.type)}</span></div>
+                        <div style="text-align:right"><span class="st ${sc}">${esc(i.state)}</span>${i.connection?`<div class="cn">${esc(i.connection)}</div>`:''}</div></div>`;
+                }).join('') || '<div class="lm">No interfaces</div>';
+            });
+        }
+
+        function selectInterface(dev) {
+            selectedIface = dev;
+            document.querySelectorAll('.ir').forEach(r => r.classList.toggle('act', r.dataset.device === dev));
+            scanNetworks(dev);
+        }
+
+        function scanNetworks(dev) {
+            const area = document.getElementById('wifiScanArea'), list = document.getElementById('ssidList');
+            const ar = document.getElementById('wifiActionRow'), rb = document.getElementById('reconnectBtn');
+            area.style.display = '';
+            document.getElementById('scanIfaceName').textContent = dev;
+            list.innerHTML = '<div class="lm"><span class="spinner"></span>Scanning...</div>';
+            ar.style.display = 'none';
+            socket.emit('getWifiNetworks', { iface: dev }, (res) => {
+                if (res.error) {
+                    list.innerHTML = `<div class="lm" style="color:#f44336">${esc(res.error)}</div>`;
+                    if (res.previousConnection) { previousConnection = res.previousConnection; rb.style.display = ''; ar.style.display = 'flex'; }
+                    return;
+                }
+                previousConnection = res.previousConnection || '';
+                const nets = res.networks || [];
+                list.innerHTML = nets.length ? nets.map(n =>
+                    `<div class="ssid-item" onclick="selectSSID('${esc(n.ssid)}',${n.saved})">${esc(n.ssid)}${n.saved?'<span class="ssid-sv">[saved]</span>':''}</div>`
+                ).join('') : '<div class="lm">No networks</div>';
+                ar.style.display = 'flex';
+                if (previousConnection) { rb.style.display = ''; rb.textContent = 'Reconnect: ' + previousConnection; }
+                else rb.style.display = 'none';
+            });
+        }
+
+        function rescan() { if (selectedIface) scanNetworks(selectedIface); }
+
+        function selectSSID(ssid, saved) {
+            if (saved) { connectToWifi(ssid, null); return; }
+            pendingSSID = ssid;
+            document.getElementById('modalSSID').textContent = ssid;
+            document.getElementById('passphraseInput').value = '';
+            document.getElementById('passphraseModal').classList.add('active');
+            document.getElementById('passphraseInput').focus();
+        }
+        function closeModal() { document.getElementById('passphraseModal').classList.remove('active'); pendingSSID = null; }
+        function submitPassphrase() { const p = document.getElementById('passphraseInput').value; closeModal(); if (pendingSSID) { connectToWifi(pendingSSID, p); pendingSSID = null; } }
+        document.getElementById('passphraseInput').addEventListener('keydown', e => { if (e.key === 'Enter') submitPassphrase(); });
+
+        function connectToWifi(ssid, pass) {
+            showToast('Connecting to ' + ssid + '...');
+            socket.emit('connectWifi', { iface: selectedIface, ssid, passphrase: pass || '' }, (res) => {
+                showToast(res.error ? 'Failed: ' + res.error : res.message || 'Connected!');
+                setTimeout(loadInterfaces, 1000);
+            });
+        }
+        function reconnectPrevious() {
+            if (!previousConnection) return;
+            showToast('Reconnecting...');
+            socket.emit('reconnectPrevious', { connectionName: previousConnection }, (res) => {
+                showToast(res.error ? 'Failed: ' + res.error : res.message || 'Reconnected!');
+                setTimeout(loadInterfaces, 1000);
+            });
+        }
+
+        function fmtB(b) { if (b == null) return '--'; if (b < 1024) return b+' B'; if (b < 1048576) return (b/1024).toFixed(1)+' KB'; if (b < 1073741824) return (b/1048576).toFixed(0)+' MB'; return (b/1073741824).toFixed(2)+' GB'; }
+        function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+        let tt; function showToast(m) { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 3000); }
+    </script>
+</body>
+</html>

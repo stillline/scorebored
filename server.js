@@ -4,6 +4,7 @@ const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
 const { Atem } = require('atem-connection');
+const { spawn, exec } = require('child_process');
 
 const app = express();
 const server = http.createServer(app);
@@ -340,6 +341,10 @@ app.get('/control', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'control.html'));
 });
 
+app.get('/network', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'network.html'));
+});
+
 app.get('/api/videos', (req, res) => {
   const videos = getAvailableVideos();
   res.json(videos);
@@ -535,6 +540,318 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('Client disconnected');
   });
+
+  // ── Network Dashboard: WiFi Management ──
+
+  socket.on('getInterfaces', (callback) => {
+    exec('nmcli -t -f DEVICE,TYPE,STATE,CONNECTION dev status', (err, stdout) => {
+      if (err) {
+        console.error('nmcli dev status error:', err.message);
+        return callback({ error: err.message });
+      }
+      const interfaces = [];
+      stdout.trim().split('\n').forEach(line => {
+        // nmcli -t uses : as separator, but connection names can contain colons
+        // Format: DEVICE:TYPE:STATE:CONNECTION
+        const parts = line.split(':');
+        if (parts.length < 4) return;
+        const dev = parts[0];
+        const type = parts[1];
+        const state = parts[2];
+        const con = parts.slice(3).join(':');
+        if (dev === 'lo' || type === 'wifi-p2p' || type === 'tun' || type === 'bridge') return;
+        interfaces.push({ device: dev, type, state, connection: con === '--' ? '' : con });
+      });
+      callback({ interfaces });
+    });
+  });
+
+  socket.on('getWifiNetworks', (data, callback) => {
+    const iface = data.iface;
+    if (!iface || /[;&|`$]/.test(iface)) {
+      return callback({ error: 'Invalid interface name' });
+    }
+
+    // Get current connection before disconnecting
+    exec(`nmcli -t -f DEVICE,CONNECTION dev status`, (err, stdout) => {
+      let previousCon = '';
+      if (!err) {
+        const match = stdout.split('\n').find(l => l.startsWith(iface + ':'));
+        if (match) {
+          previousCon = match.split(':').slice(1).join(':');
+          if (previousCon === '--') previousCon = '';
+        }
+      }
+
+      // Disconnect for full scan
+      const disconnectCmd = previousCon
+        ? `sudo nmcli dev disconnect "${iface}" 2>/dev/null; sleep 2`
+        : 'sleep 0';
+
+      exec(disconnectCmd, () => {
+        // Scan
+        exec(`nmcli -g SSID dev wifi list ifname "${iface}" --rescan yes`, (err2, stdout2) => {
+          if (err2) {
+            console.error('WiFi scan error:', err2.message);
+            return callback({ error: err2.message, previousConnection: previousCon });
+          }
+
+          const seen = new Set();
+          const ssids = [];
+          stdout2.trim().split('\n').forEach(ssid => {
+            ssid = ssid.trim();
+            if (!ssid || ssid === 'switcher_net' || seen.has(ssid)) return;
+            seen.add(ssid);
+            ssids.push(ssid);
+          });
+
+          // Check which SSIDs have saved connections
+          exec('nmcli -t -f NAME,TYPE con show', (err3, stdout3) => {
+            const savedConnections = [];
+            if (!err3) {
+              stdout3.trim().split('\n').forEach(line => {
+                if (line.endsWith(':802-11-wireless')) {
+                  savedConnections.push(line.replace(':802-11-wireless', ''));
+                }
+              });
+            }
+
+            // For each SSID, check if there's a matching saved connection
+            let checksRemaining = ssids.length;
+            const results = ssids.map(ssid => ({ ssid, saved: false }));
+
+            if (checksRemaining === 0) {
+              return callback({ networks: results, previousConnection: previousCon });
+            }
+
+            results.forEach((entry, idx) => {
+              // Check if any saved connection has this SSID
+              let found = false;
+              let conChecks = savedConnections.length;
+
+              if (conChecks === 0) {
+                checksRemaining--;
+                if (checksRemaining === 0) {
+                  callback({ networks: results, previousConnection: previousCon });
+                }
+                return;
+              }
+
+              savedConnections.forEach(conName => {
+                exec(`nmcli -g 802-11-wireless.ssid con show "${conName}" 2>/dev/null`, (e, out) => {
+                  if (!e && out.trim() === entry.ssid) {
+                    results[idx].saved = true;
+                  }
+                  conChecks--;
+                  if (conChecks === 0) {
+                    checksRemaining--;
+                    if (checksRemaining === 0) {
+                      callback({ networks: results, previousConnection: previousCon });
+                    }
+                  }
+                });
+              });
+            });
+          });
+        });
+      });
+    });
+  });
+
+  socket.on('connectWifi', (data, callback) => {
+    const { iface, ssid, passphrase } = data;
+    if (!iface || !ssid || /[;&|`$]/.test(iface)) {
+      return callback({ error: 'Invalid parameters' });
+    }
+    // Sanitize ssid for shell — use single quotes with escaping
+    const safeSSID = ssid.replace(/'/g, "'\\''");
+
+    // Check for existing saved connection matching this SSID
+    exec('nmcli -t -f NAME,TYPE con show', (err, stdout) => {
+      const wifiCons = [];
+      if (!err) {
+        stdout.trim().split('\n').forEach(line => {
+          if (line.endsWith(':802-11-wireless')) {
+            wifiCons.push(line.replace(':802-11-wireless', ''));
+          }
+        });
+      }
+
+      // Find a saved connection matching this SSID
+      let checksRemaining = wifiCons.length;
+      let existingCon = null;
+
+      if (checksRemaining === 0) {
+        // No saved connections, create new
+        return createAndConnect();
+      }
+
+      wifiCons.forEach(conName => {
+        exec(`nmcli -g 802-11-wireless.ssid con show "${conName}" 2>/dev/null`, (e, out) => {
+          if (!e && out.trim() === ssid) {
+            existingCon = conName;
+          }
+          checksRemaining--;
+          if (checksRemaining === 0) {
+            if (existingCon) {
+              // Use existing connection
+              exec(`sudo nmcli con up "${existingCon}"`, (err2, stdout2) => {
+                if (err2) {
+                  console.error('nmcli con up error:', err2.message);
+                  return callback({ error: err2.message });
+                }
+                console.log(`WiFi connected to saved: ${existingCon}`);
+                callback({ success: true, message: `Connected to ${ssid}` });
+              });
+            } else {
+              createAndConnect();
+            }
+          }
+        });
+      });
+
+      function createAndConnect() {
+        let addCmd = `sudo nmcli con add type wifi con-name '${safeSSID}' ifname "${iface}" ssid '${safeSSID}' ipv4.method auto`;
+        if (passphrase) {
+          const safePsk = passphrase.replace(/'/g, "'\\''");
+          addCmd += ` wifi-sec.key-mgmt wpa-psk wifi-sec.psk '${safePsk}'`;
+        }
+        exec(addCmd, (err2) => {
+          if (err2) {
+            console.error('nmcli con add error:', err2.message);
+            return callback({ error: err2.message });
+          }
+          exec(`sudo nmcli con up '${safeSSID}'`, (err3) => {
+            if (err3) {
+              console.error('nmcli con up error:', err3.message);
+              return callback({ error: err3.message });
+            }
+            console.log(`WiFi connected to new: ${ssid}`);
+            callback({ success: true, message: `Connected to ${ssid}` });
+          });
+        });
+      }
+    });
+  });
+
+  socket.on('reconnectPrevious', (data, callback) => {
+    const conName = data.connectionName;
+    if (!conName) {
+      return callback({ error: 'No previous connection name' });
+    }
+    const safeCon = conName.replace(/'/g, "'\\''");
+    exec(`sudo nmcli con up '${safeCon}'`, (err) => {
+      if (err) {
+        console.error('Reconnect error:', err.message);
+        return callback({ error: err.message });
+      }
+      console.log(`WiFi reconnected to: ${conName}`);
+      callback({ success: true, message: `Reconnected to ${conName}` });
+    });
+  });
+
+  // ── Network Dashboard: Speedify One-Shot Data ──
+
+  socket.on('getSpeedifyState', (callback) => {
+    exec('speedify_cli state', (err, stdout) => {
+      if (err) return callback({ error: err.message });
+      try { callback({ data: JSON.parse(stdout) }); }
+      catch (e) { callback({ data: stdout.trim() }); }
+    });
+  });
+
+  socket.on('getSpeedifyAdapters', (callback) => {
+    exec('speedify_cli show adapters', (err, stdout) => {
+      if (err) return callback({ error: err.message });
+      try { callback({ data: JSON.parse(stdout) }); }
+      catch (e) { callback({ error: 'Parse error' }); }
+    });
+  });
+
+  socket.on('getSpeedifyServer', (callback) => {
+    exec('speedify_cli show currentserver', (err, stdout) => {
+      if (err) return callback({ error: err.message });
+      try { callback({ data: JSON.parse(stdout) }); }
+      catch (e) { callback({ error: 'Parse error' }); }
+    });
+  });
+
+  socket.on('getSpeedifySettings', (callback) => {
+    exec('speedify_cli show settings', (err, stdout) => {
+      if (err) return callback({ error: err.message });
+      try { callback({ data: JSON.parse(stdout) }); }
+      catch (e) { callback({ error: 'Parse error' }); }
+    });
+  });
+
+  socket.on('runStreamTest', (callback) => {
+    exec('speedify_cli streamtest', { timeout: 90000 }, (err, stdout, stderr) => {
+      if (err) return callback({ error: err.message + (stderr ? ' | ' + stderr.trim() : '') });
+      try { callback({ data: JSON.parse(stdout) }); }
+      catch (e) { callback({ data: stdout.trim() }); }
+    });
+  });
+});
+
+// ── Speedify Live Stats Subprocess ──
+
+let speedifyProc = null;
+
+function startSpeedifyStats() {
+  if (speedifyProc) return;
+  console.log('Starting speedify_cli stats subprocess...');
+
+  speedifyProc = spawn('speedify_cli', ['-s', 'stats']);
+  let buffer = '';
+
+  speedifyProc.stdout.on('data', (chunk) => {
+    buffer += chunk.toString();
+    let lines = buffer.split('\n');
+    buffer = lines.pop(); // keep incomplete line in buffer
+    lines.forEach(line => {
+      line = line.trim();
+      if (!line) return;
+      try {
+        const parsed = JSON.parse(line);
+        // Output format is ["type", {data}] arrays
+        if (Array.isArray(parsed) && parsed.length === 2) {
+          const msg = parsed[1];
+          msg.type = parsed[0];
+          io.emit('speedifyStats', msg);
+        }
+      } catch (e) {
+        // not valid JSON, skip
+      }
+    });
+  });
+
+  speedifyProc.stderr.on('data', (chunk) => {
+    console.error('speedify_cli stderr:', chunk.toString());
+  });
+
+  speedifyProc.on('close', (code) => {
+    console.log(`speedify_cli stats exited with code ${code}, restarting in 5s...`);
+    speedifyProc = null;
+    setTimeout(startSpeedifyStats, 5000);
+  });
+
+  speedifyProc.on('error', (err) => {
+    console.error('speedify_cli spawn error:', err.message);
+    speedifyProc = null;
+    setTimeout(startSpeedifyStats, 10000);
+  });
+}
+
+startSpeedifyStats();
+
+// Clean up speedify subprocess on exit
+process.on('SIGINT', () => {
+  if (speedifyProc) speedifyProc.kill();
+  process.exit();
+});
+process.on('SIGTERM', () => {
+  if (speedifyProc) speedifyProc.kill();
+  process.exit();
 });
 
 // Initialize ATEM connection on startup
@@ -546,5 +863,6 @@ server.listen(PORT, () => {
   console.log(`Scoreboard server running on port ${PORT}`);
   console.log(`Display: http://localhost:${PORT}/display`);
   console.log(`Control: http://localhost:${PORT}/control`);
+  console.log(`Network: http://localhost:${PORT}/network`);
   console.log(`ATEM IP: ${ATEM_IP} | Graphics Input: ${GRAPHICS_INPUT} | Downstream Key: ${DOWNSTREAM_KEY}`);
 });
