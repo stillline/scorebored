@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AP Channel</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#1a1a1a;color:#ddd;padding:8px;font-size:13px}
+        .container{max-width:600px;margin:0 auto}
+        h1{text-align:center;font-size:16px;margin-bottom:2px;color:#fff}
+        .nav{text-align:center;margin-bottom:8px;font-size:11px;display:flex;gap:6px;justify-content:center}
+        .nav a{background:#555;color:white;text-decoration:none;padding:5px 14px;border-radius:6px;font-weight:600;font-size:12px}
+        .sec{background:#222;border-radius:5px;padding:8px;margin-bottom:6px}
+        .sec-hdr{font-size:13px;font-weight:700;margin-bottom:6px;color:#fff;display:flex;align-items:center;gap:6px}
+        .badge{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600}
+        .bg{background:#2e7d32}.br{background:#c62828}.by{background:#f57f17;color:#000}.bx{background:#444}
+        .btn{border:none;border-radius:4px;color:white;font-size:12px;font-weight:600;padding:5px 12px;cursor:pointer}
+        .btn:disabled{opacity:.35;cursor:not-allowed}
+        .btn-g{background:#555}.btn-p{background:#9c27b0}.btn-b{background:#1565c0}
+        .btn-row{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap}
+        /* Channel grid */
+        .ch-grid{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+        .ch-btn{width:48px;height:44px;border-radius:5px;border:2px solid transparent;background:#2a2a2a;color:#bbb;font-size:12px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;transition:background .15s,border-color .15s}
+        .ch-btn:hover{background:#333}
+        .ch-btn.current{border-color:#4caf50;color:#4caf50}
+        .ch-btn.selected{border-color:#2196f3;color:#fff;background:#1565c0}
+        .ch-btn.selected.current{border-color:#4caf50}
+        .ch-btn.dfs{color:#888}
+        .ch-btn .ch-sub{font-size:8px;font-weight:400;line-height:1}
+        .ch-btn.incompat{opacity:.25;cursor:not-allowed}
+        /* Scan overlay */
+        .ch-btn.busy1{background:#3a2a00} /* 1 AP */
+        .ch-btn.busy2{background:#4a2000} /* 2+ APs */
+        .ch-ap-count{font-size:8px;color:#ff9800}
+        /* Scan result list */
+        .ap-item{display:flex;justify-content:space-between;padding:3px 5px;background:#252525;border-radius:3px;margin-bottom:2px;font-size:11px}
+        .ap-essid{color:#ccc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px}
+        .ap-sig{color:#888;white-space:nowrap}
+        .ap-sig.good{color:#4caf50}.ap-sig.ok{color:#ffc107}.ap-sig.bad{color:#f44336}
+        .ch-detail{background:#252525;border-radius:4px;padding:5px;margin-bottom:4px}
+        .ch-detail-hdr{font-size:11px;font-weight:700;color:#fff;margin-bottom:3px}
+        label{font-size:11px;color:#888;display:block;margin-bottom:2px}
+        input[type=text]{width:100%;padding:5px 7px;border-radius:4px;border:1px solid #444;background:#333;color:white;font-size:13px;margin-bottom:6px}
+        input[type=text]:focus{outline:none;border-color:#9c27b0}
+        .sb{text-align:center;padding:3px;border-radius:3px;background:#222;margin-top:4px;font-size:10px;color:#555}
+        .sb.ok{background:#1b5e20;color:#aaa}.sb.err{background:#c62828;color:#ddd}
+        .spinner{display:inline-block;width:10px;height:10px;border:2px solid #444;border-top-color:#fff;border-radius:50%;animation:sp .8s linear infinite;vertical-align:middle;margin-right:3px}
+        @keyframes sp{to{transform:rotate(360deg)}}
+        .lm{text-align:center;padding:6px;color:#666;font-size:11px}
+        .toast{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);background:#333;color:white;padding:6px 14px;border-radius:5px;font-size:12px;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none}
+        .toast.show{opacity:1}
+        .group-label{font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.5px;width:100%;margin-top:4px;margin-bottom:1px}
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>AP Channel</h1>
+    <div class="nav">
+        <a href="/control">Scoreboard</a>
+        <a href="/network.html">Network</a>
+    </div>
+
+    <!-- Current status -->
+    <div class="sec">
+        <div class="sec-hdr">
+            wlan0 AP
+            <span class="badge bx" id="curChBadge">--</span>
+        </div>
+        <div style="font-size:11px;color:#666">/etc/hostapd/hostapd.conf</div>
+    </div>
+
+    <!-- Channel picker -->
+    <div class="sec">
+        <div class="sec-hdr">Select Channel</div>
+
+        <div class="group-label">U-NII-1 &mdash; no DFS (36&ndash;48)</div>
+        <div class="ch-grid" id="grid-1"></div>
+
+        <div class="group-label">U-NII-3 &mdash; no DFS (149&ndash;165)</div>
+        <div class="ch-grid" id="grid-3"></div>
+
+        <div class="group-label">U-NII-2 &mdash; DFS required (52&ndash;144)</div>
+        <div class="ch-grid" id="grid-2"></div>
+
+        <div id="selectedInfo" style="font-size:11px;color:#888;min-height:14px;margin-bottom:4px"></div>
+        <div class="btn-row">
+            <button class="btn btn-b" id="applyBtn" onclick="applyChannel()" disabled>Apply</button>
+            <button class="btn btn-g" onclick="loadApConfig()">Refresh</button>
+        </div>
+        <div class="sb" id="applyStatus" style="display:none"></div>
+    </div>
+
+    <!-- Nearby AP scan -->
+    <div class="sec">
+        <div class="sec-hdr">Nearby APs (5 GHz)</div>
+        <label>Scan interface (USB adapter or non-AP iface):</label>
+        <div style="display:flex;gap:4px;margin-bottom:6px">
+            <select id="scanIface" style="flex:1;padding:5px 7px;border-radius:4px;border:1px solid #444;background:#333;color:white;font-size:13px">
+                <option value="">-- loading --</option>
+            </select>
+            <button class="btn btn-g" onclick="loadScanInterfaces()" style="white-space:nowrap">Refresh</button>
+        </div>
+        <div class="btn-row">
+            <button class="btn btn-p" id="scanBtn" onclick="doScan()">Scan</button>
+        </div>
+        <div id="scanResult" style="margin-top:6px"></div>
+    </div>
+
+    <div class="sb" id="socketStatus">Connecting...</div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    const socket = io();
+    const statusBar = document.getElementById('socketStatus');
+
+    socket.on('connect', () => {
+        statusBar.textContent = 'Connected';
+        statusBar.className = 'sb ok';
+        loadApConfig();
+        loadScanInterfaces();
+    });
+    socket.on('disconnect', () => {
+        statusBar.textContent = 'Disconnected';
+        statusBar.className = 'sb err';
+    });
+
+    // Channel definitions
+    const GROUPS = [
+        { id: 'grid-1', channels: [36,40,44,48],                          dfs: false },
+        { id: 'grid-3', channels: [149,153,157,161,165],                   dfs: false },
+        { id: 'grid-2', channels: [52,56,60,64,100,104,108,112,116,120,124,128,132,136,140,144], dfs: true },
+    ];
+
+    let currentChannel = null;
+    let selectedChannel = null;
+    let scanData = {}; // ch -> [{essid, signal}]
+    let validChannels = null; // null = all valid
+
+    const HT40_PLUS_VALID  = new Set([36,44,52,60,100,108,116,124,132,140,149,157]);
+    const HT40_MINUS_VALID = new Set([40,48,56,64,104,112,120,128,136,144,153,161]);
+
+    function computeValidChannels(htCapab) {
+        const hasPlus  = htCapab.includes('[HT40+]');
+        const hasMinus = htCapab.includes('[HT40-]');
+        if (hasPlus && !hasMinus) return HT40_PLUS_VALID;
+        if (hasMinus && !hasPlus) return HT40_MINUS_VALID;
+        return null; // all valid
+    }
+
+    function isChannelValid(ch) {
+        return validChannels === null || validChannels.has(ch);
+    }
+
+    function buildGrids() {
+        GROUPS.forEach(g => {
+            const el = document.getElementById(g.id);
+            el.innerHTML = g.channels.map(ch =>
+                `<button class="ch-btn${g.dfs?' dfs':''}" id="ch-${ch}" onclick="selectChannel(${ch})">${ch}<span class="ch-sub ch-ap-count" id="cnt-${ch}"></span></button>`
+            ).join('');
+        });
+    }
+
+    function updateGridState() {
+        GROUPS.forEach(g => g.channels.forEach(ch => {
+            const btn = document.getElementById('ch-' + ch);
+            if (!btn) return;
+            const invalid = !isChannelValid(ch);
+            let cls = g.dfs ? 'ch-btn dfs' : 'ch-btn';
+            if (invalid) { cls += ' incompat'; btn.disabled = true; btn.title = 'Incompatible with ht_capab setting'; }
+            else { btn.disabled = false; btn.title = ''; }
+            if (ch === currentChannel) cls += ' current';
+            if (ch === selectedChannel && !invalid) cls += ' selected';
+            const aps = (scanData[ch] || []).length;
+            if (aps === 1) cls += ' busy1';
+            else if (aps >= 2) cls += ' busy2';
+            btn.className = cls;
+            const cnt = document.getElementById('cnt-' + ch);
+            if (cnt) cnt.textContent = aps > 0 ? aps + ' AP' + (aps > 1 ? 's' : '') : '';
+        }));
+    }
+
+    function selectChannel(ch) {
+        if (!isChannelValid(ch)) return;
+        selectedChannel = ch;
+        updateGridState();
+        const info = document.getElementById('selectedInfo');
+        const isDFS = GROUPS.find(g => g.channels.includes(ch))?.dfs;
+        info.textContent = `Selected: channel ${ch}${isDFS ? ' (DFS — radar detection required)' : ''}`;
+        document.getElementById('applyBtn').disabled = (ch === currentChannel);
+    }
+
+    function loadApConfig() {
+        document.getElementById('curChBadge').textContent = '...';
+        socket.emit('getApConfig', (res) => {
+            if (res.error) {
+                document.getElementById('curChBadge').textContent = 'ERR';
+                showToast('Error: ' + res.error);
+                return;
+            }
+            currentChannel = res.channel;
+            validChannels = computeValidChannels(res.htCapab || '');
+            document.getElementById('curChBadge').textContent = res.channel != null ? 'Ch ' + res.channel : '--';
+            if (!selectedChannel || !isChannelValid(selectedChannel)) selectedChannel = res.channel;
+            updateGridState();
+            const info = document.getElementById('selectedInfo');
+            if (selectedChannel) {
+                const isDFS = GROUPS.find(g => g.channels.includes(selectedChannel))?.dfs;
+                info.textContent = `Selected: channel ${selectedChannel}${isDFS ? ' (DFS)' : ''}`;
+            }
+            document.getElementById('applyBtn').disabled = (selectedChannel === currentChannel);
+        });
+    }
+
+    function applyChannel() {
+        if (!selectedChannel) return;
+        const btn = document.getElementById('applyBtn');
+        const st = document.getElementById('applyStatus');
+        btn.disabled = true;
+        btn.textContent = 'Applying...';
+        st.style.display = '';
+        st.className = 'sb';
+        st.innerHTML = '<span class="spinner"></span>Setting channel ' + selectedChannel + ' and restarting hostapd...';
+        socket.emit('setApChannel', { channel: selectedChannel }, (res) => {
+            btn.textContent = 'Apply';
+            if (res.error) {
+                st.className = 'sb err';
+                st.textContent = 'Error: ' + res.error;
+                btn.disabled = false;
+            } else {
+                st.className = 'sb ok';
+                st.textContent = 'Channel set to ' + res.channel + '. hostapd restarted.';
+                currentChannel = res.channel;
+                updateGridState();
+                document.getElementById('curChBadge').textContent = 'Ch ' + res.channel;
+                // leave apply disabled since selection == current
+            }
+        });
+    }
+
+    function loadScanInterfaces() {
+        const sel = document.getElementById('scanIface');
+        sel.innerHTML = '<option value="">-- loading --</option>';
+        socket.emit('getInterfaces', (res) => {
+            if (res.error) {
+                sel.innerHTML = `<option value="">${esc(res.error)}</option>`;
+                return;
+            }
+            const wifiIfaces = (res.interfaces || []).filter(i => i.type === 'wifi');
+            if (!wifiIfaces.length) {
+                sel.innerHTML = '<option value="">No WiFi interfaces found</option>';
+                return;
+            }
+            sel.innerHTML = wifiIfaces.map(i =>
+                `<option value="${esc(i.device)}">${esc(i.device)}${i.connection ? ' — ' + esc(i.connection) : ''} (${esc(i.state)})</option>`
+            ).join('');
+        });
+    }
+
+    function doScan() {
+        const iface = document.getElementById('scanIface').value.trim();
+        if (!iface) { showToast('Enter a scan interface'); return; }
+        const btn = document.getElementById('scanBtn');
+        const result = document.getElementById('scanResult');
+        btn.disabled = true;
+        btn.textContent = 'Scanning...';
+        result.innerHTML = '<div class="lm"><span class="spinner"></span>Scanning (up to 20s)...</div>';
+        socket.emit('scanApChannels', { iface }, (res) => {
+            btn.disabled = false;
+            btn.textContent = 'Scan';
+            if (res.error) {
+                result.innerHTML = `<div class="lm" style="color:#f44336">${esc(res.error)}</div>`;
+                return;
+            }
+            scanData = res.channels || {};
+            updateGridState();
+            renderScanResult();
+        });
+    }
+
+    function renderScanResult() {
+        const result = document.getElementById('scanResult');
+        const chs = Object.keys(scanData).map(Number).sort((a,b) => a-b);
+        if (!chs.length) {
+            result.innerHTML = '<div class="lm">No 5 GHz APs found</div>';
+            return;
+        }
+        let html = '';
+        chs.forEach(ch => {
+            const aps = scanData[ch];
+            html += `<div class="ch-detail"><div class="ch-detail-hdr">Ch ${ch} &mdash; ${aps.length} AP${aps.length>1?'s':''}</div>`;
+            aps.forEach(ap => {
+                const sig = ap.signal;
+                const sigCls = sig == null ? '' : sig >= -60 ? 'good' : sig >= -75 ? 'ok' : 'bad';
+                html += `<div class="ap-item"><span class="ap-essid">${esc(ap.essid || '(hidden)')}</span><span class="ap-sig ${sigCls}">${sig != null ? sig + ' dBm' : '--'}</span></div>`;
+            });
+            html += '</div>';
+        });
+        result.innerHTML = html;
+    }
+
+    function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+    let tt;
+    function showToast(m) { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 3000); }
+
+    buildGrids();
+</script>
+</body>
+</html>

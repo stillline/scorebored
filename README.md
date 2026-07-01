@@ -1,121 +1,163 @@
 # Scorebored - Live Scoreboard System
 
-A real-time scoreboard application designed for bicycle polo tournaments and sports events. Features customizable team colors, persistent state storage, and overlay-friendly display output for streaming and video production.
+A real-time scoreboard application designed for bicycle polo tournaments and sports events. Features customizable team colors, persistent state, ATEM switcher integration, and a full tournament schedule manager.
 
-## Features
+## Pages
 
-- **Real-time Updates**: Live scoreboard that updates instantly across all connected devices
-- **Customizable Colors**: Individual team colors plus global text and background color controls
-- **Persistent State**: Automatically saves and restores game state after server crashes or restarts
-- **Overlay Ready**: Clean display output optimized for video overlays and streaming
-- **Responsive Text**: Automatically resizes team names to fit display area
-- **Touch-Friendly Controls**: Easy-to-use control interface for tablets and mobile devices
+| URL | Purpose |
+|-----|---------|
+| `/control` | Main operator control panel |
+| `/display` | Clean scoreboard output (fullscreen/overlay) |
+| `/bracket` | Tournament schedule manager |
+| `/network` | Network and Speedify dashboard |
+| `/apchannel` | Wi-Fi access point channel selector |
 
-## Installation on Raspberry Pi
+---
 
-### Prerequisites
+## Control Panel (`/control`)
 
-1. **Raspberry Pi** (Pi 3 or newer recommended)
-2. **Raspberry Pi OS** (latest version)
-3. **Network connection** (WiFi or Ethernet)
+The primary interface for running a game.
 
-### Step 1: Update Your Raspberry Pi
+- **Team names** — editable text fields; changes broadcast instantly to all displays
+- **Score controls** — `+` / `−` buttons per team; scores never go below 0
+- **Team colors** — color picker per team; also controls the score box background
+- **Score text colors** — separate color picker per team score
+- **Global colors** — text color and scoreboard background color
+- **Color presets** — 20 saved color swatches (persisted in browser localStorage); click to apply, long-press or use paste button to set
+- **Swap Sides** — mirrors left/right teams, scores, and colors
+- **Reset Game** — sets both scores to 0
+- **Report Final Score** — saves the current live scores as the final result for the active matchup in `bracket.json`, then automatically advances to the next game
+- **Prev Game / Next Game** — navigate through the tournament schedule; restores previously saved scores when moving to a completed game
+- **Commercial Break** — triggers ATEM switcher cut to graphics input with full audio management (see ATEM section)
+
+---
+
+## Tournament Schedule (`/bracket`)
+
+Pre-populate all tournament matchups and manage results from one page.
+
+### Layout
+
+Each row shows:
+- Drag handle (`⠿`) — drag to reorder
+- Match number and scheduled time (click time to edit inline)
+- Left team: color swatch + name
+- `VS`
+- Right team: color swatch + name
+- Final score boxes (left score `−` right score)
+- `↺` — reset to unplayed (clears the final flag, keeps scores visible)
+- `Save` — write the score boxes to `bracket.json` and mark the game as final without touching the scoreboard
+- `Load` / `Now Playing` — load this matchup onto the scoreboard (team names, colors, and saved scores)
+- `✕` — delete the row
+
+### Visual states
+
+- **Normal** — upcoming or in-progress game
+- **Greyed out** — game has been finalized (both scores saved with `final: true`)
+- **Now Playing** — the matchup currently active on the scoreboard
+
+### Live updates
+
+- Score boxes update in real time as scores change on the scoreboard (for the active, non-finalized game)
+- When Report Final Score is pressed on the control page, the bracket page updates immediately via WebSocket
+
+### Workflow
+
+1. Open `/bracket` and hit **Save Schedule** on first use (creates `bracket.json`)
+2. Click **Load** on a matchup — teams, colors, and any existing scores load onto the scoreboard
+3. Play the game; scores update live in the schedule
+4. At the end, press **Report Final Score** on the control page — scores are saved, game is greyed out, and the next game loads automatically
+5. To correct a result: use **Prev Game** to go back, adjust scores, hit **Report Final Score** again
+6. To manually edit a saved score: change the score boxes on the bracket page and hit **Save**
+7. To un-finalize a game: click `↺` — the game returns to normal appearance but retains whatever scores were entered
+
+### Default data
+
+The schedule comes pre-loaded with the Santo tournament (32 games, Grupo A + Grupo B). Default team colors are `#292929` and `#ebebeb`.
+
+---
+
+## Display (`/display`)
+
+Clean scoreboard output — fullscreen this on the display machine.
+
+- Team names with auto-resizing text
+- Colored score boxes per team
+- Transparent background for chroma/luma keying in OBS or ATEM
+- Receives all updates via WebSocket; no manual refresh needed
+
+---
+
+## ATEM Integration
+
+Connects to a Blackmagic ATEM Mini Pro ISO on startup.
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ATEM_IP` | `10.42.0.100` | ATEM IP address |
+| `GRAPHICS_INPUT` | `1` | HDMI input number for the scoreboard computer |
+| `DOWNSTREAM_KEY` | `1` | DSK number used for the scoreboard overlay |
+
+**Commercial break sequence:**
+
+1. Turns off the upstream key (USK)
+2. Fades out the downstream key (DSK)
+3. Auto-transitions to the graphics input
+4. Mutes all Fairlight audio inputs except the graphics HDMI
+5. Plays the selected video on the display page
+
+**End of break:**
+
+1. Cuts back to the previous camera input
+2. Turns the DSK back on
+3. Turns the USK back on
+4. Restores camera audio (mics remain muted for manual restore)
+
+---
+
+## Persistent State
+
+| File | Purpose |
+|------|---------|
+| `gamestate.json` | Live scoreboard state (scores, colors, ATEM status, active matchup index) |
+| `bracket.json` | Tournament schedule with all matchups, colors, and final scores |
+
+Both files are auto-created and updated at runtime. Do not edit while the server is running.
+
+---
+
+## Installation (Raspberry Pi)
 
 ```bash
 sudo apt update && sudo apt upgrade -y
-```
 
-### Step 2: Install Node.js
-
-```bash
-# Install Node.js (version 16 or newer)
+# Install Node.js 18+
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
-# Verify installation
-node --version
-npm --version
-```
-
-### Step 3: Clone and Install the Application
-
-```bash
-# Clone the repository
+# Clone and install
 git clone https://github.com/stillline/scorebored.git
 cd scorebored
-
-# Install dependencies
 npm install
-```
 
-### Step 4: Start the Server
-
-```bash
-# Start the server
+# Start
 node server.js
 ```
 
-The server will start on port 3000. You should see:
-```
-Scoreboard server running on port 3000
-Display: http://localhost:3000/display
-Control: http://localhost:3000/control
-```
-
-### Step 5: Access the Scoreboard
-
-On your Raspberry Pi or any device on the same network:
-
-- **Control Panel**: `http://[PI_IP_ADDRESS]:3000/control`
-- **Display**: `http://[PI_IP_ADDRESS]:3000/display`
-
-To find your Pi's IP address: `ip addr show`
-
-## Usage
-
-### Control Panel (`/control`)
-- Set team names (up to 16 characters)
-- Adjust scores with +/- buttons
-- Customize team colors with color pickers
-- Set global text and background colors
-- Swap teams or reset scores
-- All changes are automatically saved
-
-### Display (`/display`)
-- Clean scoreboard display
-- Team names with auto-resizing text
-- Colored score boxes
-- Optimized for fullscreen display (press F11)
-- Transparent background for video overlays
-
-### Video Production Integration
-
-For **ATEM switchers** or **OBS**:
-1. Open display page in fullscreen (F11)
-2. Use as video source for overlay keying
-3. Background and colors are optimized for chroma/luma keying
-
-## Running as a Service (Auto-start)
-
-To make the scoreboard start automatically on boot:
-
-### Step 1: Create a systemd service
-
-```bash
-sudo nano /etc/systemd/system/scorebored.service
-```
-
-Add this content (replace `/path/to/scorebored` with actual path):
+### Run as a systemd service
 
 ```ini
+# /etc/systemd/system/scorebored.service
 [Unit]
-Description=Scoreboard Application
+Description=Scorebored
 After=network.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/scorebored
+User=matthew
+WorkingDirectory=/home/matthew/bin/scorebored
 ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=10
@@ -124,81 +166,46 @@ RestartSec=10
 WantedBy=multi-user.target
 ```
 
-### Step 2: Enable and start the service
-
 ```bash
-# Reload systemd
 sudo systemctl daemon-reload
-
-# Enable service to start on boot
 sudo systemctl enable scorebored
-
-# Start the service now
 sudo systemctl start scorebored
-
-# Check status
-sudo systemctl status scorebored
 ```
 
-## Network Access
-
-### For Local Network Access
-
-The scoreboard will be accessible to any device on your local network at:
-- `http://[PI_IP_ADDRESS]:3000`
-
-### For External Access (Optional)
-
-To access from outside your network, you'll need to:
-1. Set up port forwarding on your router (port 3000)
-2. Or use a service like ngrok for temporary external access
-
-## Troubleshooting
-
-### Server Won't Start
-- Check if port 3000 is already in use: `sudo lsof -i :3000`
-- Kill existing processes: `sudo pkill node`
-
-### Can't Access from Other Devices
-- Check Pi's firewall: `sudo ufw status`
-- Ensure devices are on same network
-- Verify Pi's IP address: `ip addr show`
-
-### Performance Issues
-- Use Pi 3 or newer for best performance
-- Ensure good network connection
-- Close unnecessary applications
+---
 
 ## File Structure
 
 ```
 scorebored/
-├── server.js              # Main server application
-├── package.json           # Node.js dependencies
-├── gamestate.json         # Auto-generated state file (don't edit)
-├── public/
-│   ├── control.html       # Control panel interface
-│   ├── display.html       # Scoreboard display
-│   └── test.html          # Test page
-└── README.md              # This file
+├── server.js              # Main server (Express + Socket.IO + ATEM)
+├── package.json
+├── gamestate.json         # Auto-generated live state
+├── bracket.json           # Auto-generated tournament schedule + results
+└── public/
+    ├── control.html       # Operator control panel
+    ├── display.html       # Scoreboard display output
+    ├── bracket.html       # Tournament schedule manager
+    ├── network.html       # Network / Speedify dashboard
+    └── apchannel.html     # Wi-Fi AP channel selector
 ```
 
-## Configuration
+---
 
-### Default Settings
-- **Port**: 3000
-- **Team Names**: Team 1, Team 2
-- **Text Color**: White (#ffffff)
-- **Background**: Grey (#808080)
-- **Score Colors**: Green (#2E7D32), Red (#B71C1C)
+## Troubleshooting
 
-### Customization
-All settings can be changed through the control panel and are automatically saved to `gamestate.json`.
+**Port already in use:**
+```bash
+sudo lsof -i :3000
+sudo pkill node
+```
 
-## Support
+**Can't access from other devices:**
+- Confirm devices are on the same network
+- Check firewall: `sudo ufw status`
+- Find Pi IP: `ip addr show`
 
-For issues or feature requests, please visit the [GitHub repository](https://github.com/stillline/scorebored).
-
-## License
-
-MIT License - See repository for full license text.
+**ATEM not connecting:**
+- Verify `ATEM_IP` env var or default `10.42.0.100`
+- Check ATEM is powered and on the same network
+- The server retries automatically; use the Connect button on the control panel

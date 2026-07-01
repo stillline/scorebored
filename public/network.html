@@ -70,6 +70,22 @@
         </div>
 
         <div class="sec">
+            <div class="sec-hdr">RTMP Relay</div>
+            <div id="rtmpDisplay" style="font-size:11px;color:#666;margin-bottom:6px"><span class="spinner"></span>Loading...</div>
+            <label style="font-size:11px;color:#666;display:block;margin-bottom:2px">Base URL</label>
+            <input type="text" id="rtmpBaseUrl" placeholder="rtmp://example.com/live" style="width:100%;padding:5px 7px;border-radius:4px;border:1px solid #444;background:#333;color:white;font-size:13px;margin-bottom:4px">
+            <label style="font-size:11px;color:#666;display:block;margin-bottom:2px">Stream Key</label>
+            <input type="text" id="rtmpStreamKey" placeholder="stream-key" style="width:100%;padding:5px 7px;border-radius:4px;border:1px solid #444;background:#333;color:white;font-size:13px;margin-bottom:6px">
+            <div class="btn-row">
+                <button class="btn btn-p" onclick="applyRtmpDest()">Apply</button>
+                <button class="btn btn-g" onclick="loadRtmpDest()">Refresh</button>
+                <button class="btn btn-g" onclick="saveRtmpPreset()">Save Preset</button>
+            </div>
+            <div class="sb" id="rtmpStatus" style="display:none"></div>
+            <div id="rtmpPresets" style="margin-top:6px"></div>
+        </div>
+
+        <div class="sec">
             <div class="sec-hdr">Speedify <span class="badge bx" id="speedifyStateBadge">--</span></div>
             <div class="row">
                 <span><span class="l">Server:</span> <span class="v" id="bannerServer">--</span></span>
@@ -104,6 +120,7 @@
             </div>
             <div class="btn-row"><button class="btn btn-p" onclick="loadInterfaces()">Refresh</button></div>
         </div>
+
         <div class="sb" id="socketStatus">Connecting...</div>
     </div>
 
@@ -128,7 +145,7 @@
         let lastStreamingStats = null, lastSessionStats = null, speedifyInfoLoaded = false;
 
         const statusBar = document.getElementById('socketStatus');
-        socket.on('connect', () => { statusBar.textContent = 'Connected'; statusBar.className = 'sb ok'; loadInterfaces(); if (!speedifyInfoLoaded) { loadSpeedifyInfo(); speedifyInfoLoaded = true; } });
+        socket.on('connect', () => { statusBar.textContent = 'Connected'; statusBar.className = 'sb ok'; loadInterfaces(); loadRtmpDest(); renderRtmpPresets(); if (!speedifyInfoLoaded) { loadSpeedifyInfo(); speedifyInfoLoaded = true; } });
         socket.on('disconnect', () => { statusBar.textContent = 'Disconnected'; statusBar.className = 'sb err'; });
 
         socket.on('speedifyStats', (data) => {
@@ -253,21 +270,25 @@
             socket.emit('runStreamTest', (r) => {
                 btn.disabled = false; btn.textContent = 'Stream Test';
                 if (r.error) { res.textContent = 'Error: ' + r.error; return; }
-                // Result is an array; take first entry
                 const d = Array.isArray(r.data) ? r.data[0] : r.data;
                 if (!d || typeof d !== 'object') { res.textContent = String(r.data); return; }
-                const upMbps = d.uploadSpeed != null ? (d.uploadSpeed / 1e6).toFixed(1) : '--';
-                const dnMbps = d.downloadSpeed != null ? (d.downloadSpeed / 1e6).toFixed(1) : '--';
-                const lossStr = d.loss != null ? (d.loss * 100).toFixed(2) : '--';
-                res.innerHTML = [
-                    ['Up', `${upMbps} MB/s`],
-                    ['Dn', `${dnMbps} MB/s`],
-                    ['Lat', `${d.latency ?? '--'} ms`],
-                    ['Loss', `${lossStr}%`],
-                    ['Jitter', `${d.jitter ?? '--'} ms`],
-                    ['Conns', d.numConnections ?? '--'],
-                    ['Res', `${d.resolution ?? ''} ${d.fps ?? ''}fps`],
-                ].map(([l,v]) => `<b style="color:#fff">${l}:</b> <b style="color:#4caf50">${v}</b>`).join(' &nbsp;');
+
+                const upMbps = d.uploadSpeed != null ? (d.uploadSpeed * 8 / 1e6).toFixed(1) : '--';
+                const upColor = d.uploadSpeed == null ? '#888' : d.uploadSpeed * 8 / 1e6 >= 7 ? '#4caf50' : d.uploadSpeed * 8 / 1e6 >= 4 ? '#ffc107' : '#f44336';
+                const latColor = d.latency == null ? '#888' : d.latency < 100 ? '#4caf50' : d.latency < 200 ? '#ffc107' : '#f44336';
+                const lossColor = d.loss == null ? '#888' : d.loss < 0.01 ? '#4caf50' : d.loss < 0.05 ? '#ffc107' : '#f44336';
+                const lossStr = d.loss != null ? (d.loss * 100).toFixed(1) + '%' : '--';
+                const server = [d.city, d.country].filter(Boolean).join(', ') || '--';
+
+                res.innerHTML = `
+                    <div class="sg" style="margin-top:4px">
+                        <div class="si"><div class="k">Upload</div><div class="n" style="color:${upColor}">${upMbps}<span class="u"> Mbps</span></div></div>
+                        <div class="si"><div class="k">Latency</div><div class="n sm" style="color:${latColor}">${d.latency ?? '--'}<span class="u"> ms</span></div></div>
+                        <div class="si"><div class="k">Loss</div><div class="n sm" style="color:${lossColor}">${lossStr}</div></div>
+                        <div class="si"><div class="k">Jitter</div><div class="n sm">${d.jitter ?? '--'}<span class="u"> ms</span></div></div>
+                        <div class="si"><div class="k">Conns</div><div class="n sm">${d.numConnections ?? '--'}</div></div>
+                        <div class="si"><div class="k">Server</div><div class="n sm" style="font-size:10px">${esc(server)}</div></div>
+                    </div>`;
             });
         }
 
@@ -346,9 +367,91 @@
             });
         }
 
+        const RTMP_PRESETS_KEY = 'rtmpPresets';
+
+        function getRtmpPresets() {
+            try { return JSON.parse(localStorage.getItem(RTMP_PRESETS_KEY)) || []; } catch { return []; }
+        }
+
+        function saveRtmpPresets(presets) {
+            localStorage.setItem(RTMP_PRESETS_KEY, JSON.stringify(presets));
+        }
+
+        function saveRtmpPreset() {
+            const baseUrl = document.getElementById('rtmpBaseUrl').value.trim();
+            const streamKey = document.getElementById('rtmpStreamKey').value.trim();
+            if (!baseUrl || !streamKey) { showToast('Fill in Base URL and Stream Key first'); return; }
+            const name = prompt('Preset name:', streamKey);
+            if (!name) return;
+            const presets = getRtmpPresets().filter(p => p.name !== name);
+            presets.push({ name, baseUrl, streamKey });
+            saveRtmpPresets(presets);
+            renderRtmpPresets();
+            showToast('Preset saved: ' + name);
+        }
+
+        function loadRtmpPreset(i) {
+            const p = getRtmpPresets()[i];
+            if (!p) return;
+            document.getElementById('rtmpBaseUrl').value = p.baseUrl;
+            document.getElementById('rtmpStreamKey').value = p.streamKey;
+            document.getElementById('rtmpStatus').style.display = 'none';
+        }
+
+        function deleteRtmpPreset(i) {
+            const presets = getRtmpPresets();
+            presets.splice(i, 1);
+            saveRtmpPresets(presets);
+            renderRtmpPresets();
+        }
+
+        function renderRtmpPresets() {
+            const presets = getRtmpPresets();
+            const el = document.getElementById('rtmpPresets');
+            if (!presets.length) { el.innerHTML = ''; return; }
+            el.innerHTML = presets.map((p, i) =>
+                `<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">
+                    <button class="btn btn-g" style="flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" onclick="loadRtmpPreset(${i})" title="${esc(p.baseUrl)}/${esc(p.streamKey)}">${esc(p.name)}</button>
+                    <button class="btn btn-g" style="background:#5a2020;padding:4px 8px" onclick="deleteRtmpPreset(${i})">✕</button>
+                </div>`
+            ).join('');
+        }
+
+        function loadRtmpDest() {
+            const disp = document.getElementById('rtmpDisplay');
+            disp.innerHTML = '<span class="spinner"></span>Loading...';
+            socket.emit('getNginxStreamDest', (res) => {
+                if (res.error) { disp.textContent = 'Error: ' + res.error; return; }
+                disp.innerHTML = '<span style="color:#ccc;font-weight:600">' + esc(res.fullUrl) + '</span>';
+                document.getElementById('rtmpBaseUrl').value = res.baseUrl;
+                document.getElementById('rtmpStreamKey').value = res.streamKey;
+            });
+        }
+
+        function applyRtmpDest() {
+            const baseUrl = document.getElementById('rtmpBaseUrl').value.trim();
+            const streamKey = document.getElementById('rtmpStreamKey').value.trim();
+            const st = document.getElementById('rtmpStatus');
+            st.style.display = '';
+            st.className = 'sb';
+            st.innerHTML = '<span class="spinner"></span>Applying...';
+            socket.emit('setNginxStreamDest', { baseUrl, streamKey }, (res) => {
+                if (res.error) {
+                    st.className = 'sb err';
+                    st.textContent = 'Error: ' + res.error;
+                } else {
+                    st.className = 'sb ok';
+                    st.textContent = 'Updated. nginx reloaded.';
+                    loadRtmpDest();
+                }
+            });
+        }
+
         function fmtB(b) { if (b == null) return '--'; if (b < 1024) return b+' B'; if (b < 1048576) return (b/1024).toFixed(1)+' KB'; if (b < 1073741824) return (b/1048576).toFixed(0)+' MB'; return (b/1073741824).toFixed(2)+' GB'; }
         function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
         let tt; function showToast(m) { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 3000); }
+
+        renderRtmpPresets();
     </script>
 </body>
 </html>

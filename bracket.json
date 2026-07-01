@@ -1,0 +1,315 @@
+{
+  "matchups": [
+    {
+      "group": "Day 1"
+    },
+    {
+      "num": 1,
+      "time": "9:00",
+      "left": "Gulls",
+      "right": "Silky Mitts",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 2,
+      "time": "9:30",
+      "left": "Copperhead",
+      "right": "A Swig and A Miss",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 3,
+      "time": "10:00",
+      "left": "Mothership",
+      "right": "Best Bet",
+      "lc": "#292929",
+      "rc": "#ebebeb",
+      "ls": 0,
+      "rs": 0,
+      "final": true
+    },
+    {
+      "num": 4,
+      "time": "10:30",
+      "left": "Gulls",
+      "right": "A Swig and A Miss",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 5,
+      "time": "11:00",
+      "left": "Silky Mitts",
+      "right": "Best Bet",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 6,
+      "time": "11:30",
+      "left": "Copperhead",
+      "right": "Valley Boyz",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 7,
+      "time": "12:00",
+      "left": "Gulls",
+      "right": "Best Bet",
+      "lc": "#292929",
+      "rc": "#ebebeb",
+      "ls": 0,
+      "rs": 0,
+      "final": true
+    },
+    {
+      "num": 8,
+      "time": "12:30",
+      "left": "A Swig and A Miss",
+      "right": "Valley Boyz",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 9,
+      "time": "13:00",
+      "left": "Silky Mitts",
+      "right": "Beehive Baes",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 10,
+      "time": "13:30",
+      "left": "Gulls",
+      "right": "Valley Boyz",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 11,
+      "time": "14:00",
+      "left": "Best Bet",
+      "right": "Beehive Baes",
+      "lc": "#292929",
+      "rc": "#ebebeb",
+      "ls": 0,
+      "rs": 0,
+      "final": true
+    },
+    {
+      "num": 12,
+      "time": "14:30",
+      "left": "A Swig and A Miss",
+      "right": "Nemesis",
+      "lc": "#292929",
+      "rc": "#ebebeb",
+      "ls": 1,
+      "rs": 1,
+      "final": true
+    },
+    {
+      "num": 13,
+      "time": "15:00",
+      "left": "Gulls",
+      "right": "Beehive Baes",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 14,
+      "time": "15:30",
+      "left": "Valley Boyz",
+      "right": "Nemesis",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 15,
+      "time": "16:00",
+      "left": "Best Bet",
+      "right": "Yoke",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 16,
+      "time": "16:30",
+      "left": "Gulls",
+      "right": "Nemesis",
+      "lc": "#292929",
+      "rc": "#ebebeb",
+      "ls": 0,
+      "rs": 0,
+      "final": true
+    },
+    {
+      "num": 17,
+      "time": "17:00",
+      "left": "Beehive Baes",
+      "right": "Yoke",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 18,
+      "time": "17:30",
+      "left": "Valley Boyz",
+      "right": "Golden Geese",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 19,
+      "time": "18:00",
+      "left": "Gulls",
+      "right": "Yoke",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 20,
+      "time": "18:30",
+      "left": "Silky Mitts",
+      "right": "A Swig and A Miss",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "group": "Day 2"
+    },
+    {
+      "num": 21,
+      "time": "9:00",
+      "left": "Nemesis",
+      "right": "Golden Geese",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 22,
+      "time": "9:30",
+      "left": "Beehive Baes",
+      "right": "Slither",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 23,
+      "time": "10:00",
+      "left": "Gulls",
+      "right": "Golden Geese",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 24,
+      "time": "10:30",
+      "left": "Yoke",
+      "right": "Slither",
+      "lc": "#292929",
+      "rc": "#ebebeb",
+      "ls": 0,
+      "rs": 0,
+      "final": true
+    },
+    {
+      "num": 25,
+      "time": "11:00",
+      "left": "Nemesis",
+      "right": "Mothership",
+      "lc": "#292929",
+      "rc": "#ebebeb",
+      "ls": 0,
+      "rs": 0,
+      "final": true
+    },
+    {
+      "num": 26,
+      "time": "11:30",
+      "left": "Gulls",
+      "right": "Slither",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 27,
+      "time": "12:00",
+      "left": "Golden Geese",
+      "right": "Mothership",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 28,
+      "time": "12:30",
+      "left": "Yoke",
+      "right": "Copperhead",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 29,
+      "time": "13:00",
+      "left": "Gulls",
+      "right": "Mothership",
+      "lc": "#292929",
+      "rc": "#ebebeb",
+      "ls": 0,
+      "rs": 0,
+      "final": true
+    },
+    {
+      "num": 30,
+      "time": "13:30",
+      "left": "Slither",
+      "right": "Copperhead",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 31,
+      "time": "14:00",
+      "left": "Golden Geese",
+      "right": "Silky Mitts",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "num": 32,
+      "time": "14:30",
+      "left": "Gulls",
+      "right": "Copperhead",
+      "lc": "#292929",
+      "rc": "#ebebeb",
+      "ls": 0,
+      "rs": 0,
+      "final": true
+    },
+    {
+      "num": 33,
+      "time": "15:00",
+      "left": "Copperhead",
+      "right": "Silky Mitts",
+      "lc": "#292929",
+      "rc": "#ebebeb",
+      "ls": 0,
+      "rs": 0,
+      "final": true
+    },
+    {
+      "num": 34,
+      "time": "15:30",
+      "left": "Slither",
+      "right": "A Swig and A Miss",
+      "lc": "#292929",
+      "rc": "#ebebeb",
+      "ls": 0,
+      "rs": 0,
+      "final": true
+    }
+  ]
+}

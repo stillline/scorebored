@@ -26,15 +26,68 @@
 
         h1 {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 8px;
             color: #fff;
+        }
+
+        .timer-inline {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            background: #2a2a2a;
+            border-radius: 6px;
+            padding: 2px 4px;
+        }
+
+        .timer-inline input[type=text] {
+            background: #2a2a2a;
+            border: none;
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            width: 22px;
+            text-align: center;
+            padding: 0;
+        }
+
+        .timer-inline input[type=text]:focus {
+            outline: 1px solid #00bcd4;
+        }
+
+        .timer-inline .timer-sep {
+            font-size: 14px;
+            font-weight: bold;
+            line-height: 1;
+        }
+
+        .timer-inline-btn {
+            border: none;
+            border-radius: 3px;
+            color: white;
+            font-size: 9px;
+            font-weight: bold;
+            padding: 2px 4px;
+            cursor: pointer;
+            background: #00bcd4;
+            margin-left: 2px;
+        }
+
+        .timer-inline-btn:hover { filter: brightness(1.15); }
+        .timer-inline-btn.restart { background: #ff9800; }
+        .timer-inline-btn.stop { background: #f44336; }
+
+        .teams-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
         }
 
         .team-section {
             background: #2a2a2a;
             border-radius: 12px;
             padding: 20px;
-            margin-bottom: 20px;
+            flex: 1;
+            min-width: 0;
             border-left: 4px solid #4CAF50;
         }
 
@@ -115,27 +168,86 @@
 
         .preset-colors {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(40px, 1fr));
+            grid-template-columns: repeat(5, 1fr);
             gap: 8px;
             margin-bottom: 15px;
         }
 
-        .preset-color {
-            width: 40px;
-            height: 40px;
-            border-radius: 6px;
+        .preset-slot {
+            position: relative;
+            width: 100%;
+            padding-bottom: 100%;
+            border-radius: 8px;
             border: 2px solid #555;
+            overflow: hidden;
             cursor: pointer;
-            transition: border-color 0.2s;
         }
 
-        .preset-color:hover {
+        .preset-slot:hover {
             border-color: #fff;
         }
 
-        .preset-color.selected {
-            border-color: #4CAF50;
-            border-width: 3px;
+        .preset-slot-inner {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .preset-slot-actions {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            display: none;
+            justify-content: space-around;
+            background: rgba(0,0,0,0.6);
+            padding: 2px 0;
+        }
+
+        .preset-slot:hover .preset-slot-actions {
+            display: flex;
+        }
+
+        .preset-action-btn {
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 11px;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+
+        .preset-action-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .preset-color-input {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+
+        .paste-btn {
+            background: #3a3a3a;
+            border: 1px solid #555;
+            border-radius: 5px;
+            color: #ccc;
+            font-size: 13px;
+            padding: 4px 10px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .paste-btn:hover {
+            background: #4a4a4a;
+            color: #fff;
         }
 
         .score-controls {
@@ -213,6 +325,14 @@
 
         .action-button.reset:hover {
             background: #f57c00;
+        }
+
+        .action-button.report {
+            background: #6a1b9a;
+        }
+
+        .action-button.report:hover {
+            background: #7b1fa2;
         }
 
         .status {
@@ -442,50 +562,85 @@
         .key-button.active {
             background: #4caf50;
         }
+
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Scorebored</h1>
-        <div style="text-align:center;margin-bottom:16px;">
+        <div style="display:flex;justify-content:center;margin-bottom:16px;">
+            <div class="timer-inline">
+                <input type="text" id="timerHours" value="00" maxlength="2">
+                <span class="timer-sep">:</span>
+                <input type="text" id="timerMinutes" value="00" maxlength="2">
+                <span class="timer-sep">:</span>
+                <input type="text" id="timerSeconds" value="00" maxlength="2">
+                <button class="timer-inline-btn" onclick="timerStart()">Start</button>
+                <button class="timer-inline-btn restart" onclick="timerRestart()">Restart</button>
+                <button class="timer-inline-btn stop" onclick="timerStop()">Stop</button>
+            </div>
+        </div>
+        <div style="text-align:center;margin-bottom:16px;display:flex;gap:10px;justify-content:center;">
             <a href="/network" style="background:#2196f3;color:white;text-decoration:none;padding:8px 20px;border-radius:8px;font-weight:bold;font-size:14px;">Network Dashboard</a>
+            <a href="/bracket" style="background:#6a1b9a;color:white;text-decoration:none;padding:8px 20px;border-radius:8px;font-weight:bold;font-size:14px;">Tournament Schedule</a>
+            <a href="http://10.42.0.1:8000/" target="_blank" style="background:#e65100;color:white;text-decoration:none;padding:8px 20px;border-radius:8px;font-weight:bold;font-size:14px;">Companion</a>
         </div>
 
-        <div class="team-section">
-            <div class="team-header">
-                <span class="team-label">Left Team</span>
+        <div class="teams-row">
+            <div class="team-section">
+                <div class="team-header">
+                    <span class="team-label">Left Team</span>
+                </div>
+                <input type="text" class="team-name-input" id="leftTeamInput" placeholder="Team name" maxlength="16">
+                <div class="color-controls">
+                    <label>Color:</label>
+                    <input type="color" class="color-picker" id="leftColorPicker" value="#2E7D32">
+                    <button class="paste-btn" onclick="pasteToColor('left')">Paste</button>
+                </div>
+                <div class="color-controls">
+                    <label>Score Text:</label>
+                    <input type="color" class="color-picker" id="leftScoreTextPicker" value="#ffffff">
+                    <button class="paste-btn" onclick="pasteToColor('leftScoreText')">Paste</button>
+                </div>
+                <div class="score-controls">
+                    <button class="score-button minus" onclick="updateScore('left', -1)">-</button>
+                    <div class="score-display" id="leftScore">0</div>
+                    <button class="score-button" onclick="updateScore('left', 1)">+</button>
+                </div>
             </div>
-            <input type="text" class="team-name-input" id="leftTeamInput" placeholder="Team name" maxlength="16">
-            <div class="color-controls">
-                <label>Color:</label>
-                <input type="color" class="color-picker" id="leftColorPicker" value="#2E7D32">
-            </div>
-            <div class="score-controls">
-                <button class="score-button minus" onclick="updateScore('left', -1)">-</button>
-                <div class="score-display" id="leftScore">0</div>
-                <button class="score-button" onclick="updateScore('left', 1)">+</button>
-            </div>
-        </div>
 
-        <div class="team-section right">
-            <div class="team-header">
-                <span class="team-label">Right Team</span>
-            </div>
-            <input type="text" class="team-name-input" id="rightTeamInput" placeholder="Team name" maxlength="16">
-            <div class="color-controls">
-                <label>Color:</label>
-                <input type="color" class="color-picker" id="rightColorPicker" value="#B71C1C">
-            </div>
-            <div class="score-controls">
-                <button class="score-button minus" onclick="updateScore('right', -1)">-</button>
-                <div class="score-display" id="rightScore">0</div>
-                <button class="score-button" onclick="updateScore('right', 1)">+</button>
+            <div class="team-section right">
+                <div class="team-header">
+                    <span class="team-label">Right Team</span>
+                </div>
+                <input type="text" class="team-name-input" id="rightTeamInput" placeholder="Team name" maxlength="16">
+                <div class="color-controls">
+                    <label>Color:</label>
+                    <input type="color" class="color-picker" id="rightColorPicker" value="#B71C1C">
+                    <button class="paste-btn" onclick="pasteToColor('right')">Paste</button>
+                </div>
+                <div class="color-controls">
+                    <label>Score Text:</label>
+                    <input type="color" class="color-picker" id="rightScoreTextPicker" value="#ffffff">
+                    <button class="paste-btn" onclick="pasteToColor('rightScoreText')">Paste</button>
+                </div>
+                <div class="score-controls">
+                    <button class="score-button minus" onclick="updateScore('right', -1)">-</button>
+                    <div class="score-display" id="rightScore">0</div>
+                    <button class="score-button" onclick="updateScore('right', 1)">+</button>
+                </div>
             </div>
         </div>
 
         <div class="action-buttons">
             <button class="action-button" onclick="swapSides()">Swap Sides</button>
             <button class="action-button reset" onclick="resetGame()">Reset Game</button>
+            <button class="action-button report" onclick="reportFinalScore()">Report Final Score</button>
+        </div>
+
+        <div class="action-buttons" style="margin-top:10px;">
+            <button class="action-button" onclick="prevGame()">◀ Prev Game</button>
+            <button class="action-button" onclick="nextGame()">Next Game ▶</button>
         </div>
 
         <div class="commercial-section">
@@ -519,15 +674,15 @@
                 </div>
                 <div class="key-controls">
                     <button class="key-button" id="downstreamKeyBtn" onclick="toggleDownstreamKey()">Downstream Key: OFF</button>
+                    <button class="key-button" id="upstreamKeyBtn" onclick="toggleUpstreamKey()">Upstream Key: OFF</button>
+                    <button class="key-button" id="startBarsBtn" onclick="startBars()">Start Bars</button>
                 </div>
             </div>
         </div>
 
         <div class="color-presets">
-            <div class="presets-header">Team Color Presets</div>
-            <div class="preset-colors" id="presetColors">
-                <!-- Preset colors will be populated by JavaScript -->
-            </div>
+            <div class="presets-header">Color Presets</div>
+            <div class="preset-colors" id="presetColors"></div>
         </div>
 
         <div class="color-presets">
@@ -535,14 +690,16 @@
             <div class="color-controls">
                 <label>Text Color:</label>
                 <input type="color" class="color-picker" id="textColorPicker" value="#ffffff">
+                <button class="paste-btn" onclick="pasteToColor('text')">Paste</button>
             </div>
             <div class="color-controls">
                 <label>Background Bar:</label>
                 <input type="color" class="color-picker" id="backgroundColorPicker" value="#808080">
+                <button class="paste-btn" onclick="pasteToColor('background')">Paste</button>
             </div>
         </div>
 
-        <div class="status" id="status">Connecting...</div>
+<div class="status" id="status">Connecting...</div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -556,6 +713,8 @@
         const statusEl = document.getElementById('status');
         const leftColorPicker = document.getElementById('leftColorPicker');
         const rightColorPicker = document.getElementById('rightColorPicker');
+        const leftScoreTextPicker = document.getElementById('leftScoreTextPicker');
+        const rightScoreTextPicker = document.getElementById('rightScoreTextPicker');
         const textColorPicker = document.getElementById('textColorPicker');
         const backgroundColorPicker = document.getElementById('backgroundColorPicker');
         const presetColorsEl = document.getElementById('presetColors');
@@ -566,16 +725,22 @@
         const atemStatus = document.getElementById('atemStatus');
         const downstreamKeyBtn = document.getElementById('downstreamKeyBtn');
         
-        // Preset colors for bicycle polo teams
-        const colorPresets = [
-            '#2E7D32', '#B71C1C', '#1976D2', '#FF8F00', 
-            '#7B1FA2', '#D32F2F', '#388E3C', '#F57C00',
-            '#512DA8', '#1565C0', '#00796B', '#795548',
-            '#455A64', '#E64A19', '#C2185B', '#8E24AA'
+        // 20 fixed preset slots (5 cols x 4 rows), persisted in localStorage
+        const PRESET_COUNT = 20;
+        const DEFAULT_PRESETS = [
+            '#2E7D32', '#B71C1C', '#1976D2', '#FF8F00', '#7B1FA2',
+            '#D32F2F', '#388E3C', '#F57C00', '#512DA8', '#1565C0',
+            '#00796B', '#795548', '#455A64', '#E64A19', '#C2185B',
+            '#8E24AA', '#546E7A', '#6D4C41', '#37474F', '#BF360C'
         ];
-        
-        // Load saved colors from localStorage
-        let savedColors = JSON.parse(localStorage.getItem('scoreboardColors')) || [];
+
+        let presetSlots = JSON.parse(localStorage.getItem('presetSlots'));
+        if (!presetSlots || presetSlots.length !== PRESET_COUNT) {
+            presetSlots = [...DEFAULT_PRESETS];
+            localStorage.setItem('presetSlots', JSON.stringify(presetSlots));
+        }
+
+        let clipboardColor = null;
 
         // Commercial break functionality
         async function loadAvailableVideos() {
@@ -648,6 +813,16 @@
             socket.emit('atemToggleDownstreamKey');
         }
 
+        function toggleUpstreamKey() {
+            console.log('Toggling upstream key...');
+            socket.emit('atemToggleUpstreamKey');
+        }
+
+        function startBars() {
+            console.log('Starting bars...');
+            socket.emit('atemStartBars');
+        }
+
         function updateAtemStatus(gameState) {
             if (gameState.atemStatus) {
                 const atemConnected = gameState.atemStatus.connected;
@@ -677,6 +852,20 @@
                     downstreamKeyBtn.textContent = `Downstream Key: ${keyEnabled ? 'ON' : 'OFF'}`;
                     downstreamKeyBtn.className = keyEnabled ? 'key-button active' : 'key-button';
                 }
+
+                // Update start bars button
+                const barsBtn = document.getElementById('startBarsBtn');
+                barsBtn.disabled = !atemConnected;
+                barsBtn.textContent = gameState.barsActive ? 'Stop Bars' : 'Start Bars';
+                barsBtn.className = gameState.barsActive ? 'key-button active' : 'key-button';
+
+                // Update upstream key button
+                upstreamKeyBtn.disabled = !atemConnected;
+                if (atemConnected) {
+                    const uskEnabled = gameState.atemStatus.upstreamKeyEnabled;
+                    upstreamKeyBtn.textContent = `Upstream Key: ${uskEnabled ? 'ON' : 'OFF'}`;
+                    upstreamKeyBtn.className = uskEnabled ? 'key-button active' : 'key-button';
+                }
             }
         }
 
@@ -687,77 +876,107 @@
                 startCommercialBtn.disabled = true;
                 stopCommercialBtn.disabled = false;
                 videoSelector.disabled = true;
+                document.getElementById('startBarsBtn').disabled = true;
             } else {
                 commercialStatus.textContent = 'Ready';
                 commercialStatus.classList.remove('active');
                 stopCommercialBtn.disabled = true;
                 videoSelector.disabled = false;
                 updateCommercialButtons();
+                // startBarsBtn re-enabled by updateAtemStatus based on ATEM connection
             }
         }
         
         function initializeColorPresets() {
             presetColorsEl.innerHTML = '';
-            
-            // Add saved colors first
-            savedColors.forEach((color, index) => {
-                addPresetColor(color, true, index);
-            });
-            
-            // Add default presets
-            colorPresets.forEach(color => {
-                if (!savedColors.includes(color)) {
-                    addPresetColor(color, false);
-                }
-            });
-        }
-        
-        function addPresetColor(color, isSaved, savedIndex) {
-            const colorDiv = document.createElement('div');
-            colorDiv.className = 'preset-color';
-            colorDiv.style.backgroundColor = color;
-            colorDiv.title = color;
-            
-            colorDiv.addEventListener('click', () => {
-                // Apply to currently selected color picker or last focused one
-                if (document.activeElement === leftColorPicker || lastFocusedPicker === 'left') {
-                    leftColorPicker.value = color;
-                    updateTeamColor('left', color);
-                } else {
-                    rightColorPicker.value = color;
-                    updateTeamColor('right', color);
-                }
-            });
-            
-            if (isSaved && savedIndex !== undefined) {
-                // Add delete functionality for saved colors
-                colorDiv.addEventListener('contextmenu', (e) => {
-                    e.preventDefault();
-                    if (confirm('Remove this color from saved presets?')) {
-                        savedColors.splice(savedIndex, 1);
-                        localStorage.setItem('scoreboardColors', JSON.stringify(savedColors));
-                        initializeColorPresets();
-                    }
+            presetSlots.forEach((color, index) => {
+                const slot = document.createElement('div');
+                slot.className = 'preset-slot';
+                slot.style.backgroundColor = color;
+                slot.title = color;
+
+                const inner = document.createElement('div');
+                inner.className = 'preset-slot-inner';
+
+                // Hidden color picker to edit the slot
+                const picker = document.createElement('input');
+                picker.type = 'color';
+                picker.className = 'preset-color-input';
+                picker.value = color;
+                picker.title = 'Edit this preset';
+                picker.addEventListener('change', (e) => {
+                    presetSlots[index] = e.target.value;
+                    localStorage.setItem('presetSlots', JSON.stringify(presetSlots));
+                    initializeColorPresets();
                 });
-            }
-            
-            presetColorsEl.appendChild(colorDiv);
+
+                const actions = document.createElement('div');
+                actions.className = 'preset-slot-actions';
+
+                const copyBtn = document.createElement('button');
+                copyBtn.className = 'preset-action-btn';
+                copyBtn.textContent = 'Copy';
+                copyBtn.title = 'Copy color to clipboard';
+                copyBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    clipboardColor = presetSlots[index];
+                    copyBtn.textContent = '✓';
+                    setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1000);
+                });
+
+                const editBtn = document.createElement('button');
+                editBtn.className = 'preset-action-btn';
+                editBtn.textContent = 'Edit';
+                editBtn.title = 'Change this preset color';
+                editBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    picker.click();
+                });
+
+                actions.appendChild(copyBtn);
+                actions.appendChild(editBtn);
+                inner.appendChild(picker);
+                slot.appendChild(inner);
+                slot.appendChild(actions);
+                presetColorsEl.appendChild(slot);
+            });
         }
-        
+
+        async function pasteToColor(target) {
+            // Try system clipboard first, fall back to internal clipboard
+            let color = null;
+            try {
+                const text = await navigator.clipboard.readText();
+                if (/^#[0-9a-fA-F]{6}$/.test(text.trim())) color = text.trim();
+            } catch (e) {}
+            if (!color) color = clipboardColor;
+            if (!color) return;
+
+            if (target === 'left') {
+                leftColorPicker.value = color;
+                socket.emit('updateTeamColor', { side: 'left', color });
+            } else if (target === 'right') {
+                rightColorPicker.value = color;
+                socket.emit('updateTeamColor', { side: 'right', color });
+            } else if (target === 'text') {
+                textColorPicker.value = color;
+                socket.emit('updateGlobalColor', { type: 'text', color });
+            } else if (target === 'background') {
+                backgroundColorPicker.value = color;
+                socket.emit('updateGlobalColor', { type: 'background', color });
+            } else if (target === 'leftScoreText') {
+                leftScoreTextPicker.value = color;
+                socket.emit('updateGlobalColor', { type: 'leftScoreText', color });
+            } else if (target === 'rightScoreText') {
+                rightScoreTextPicker.value = color;
+                socket.emit('updateGlobalColor', { type: 'rightScoreText', color });
+            }
+        }
+
         let lastFocusedPicker = 'left';
-        
-        function saveCurrentColor(color) {
-            if (!savedColors.includes(color)) {
-                savedColors.unshift(color); // Add to beginning
-                if (savedColors.length > 8) savedColors.pop(); // Keep only 8 saved colors
-                localStorage.setItem('scoreboardColors', JSON.stringify(savedColors));
-                initializeColorPresets();
-            }
-        }
-        
+
         function updateTeamColor(side, color) {
             socket.emit('updateTeamColor', { side, color });
-            saveCurrentColor(color);
         }
         
         socket.on('connect', () => {
@@ -772,6 +991,17 @@
             statusEl.className = 'status disconnected';
         });
         
+        socket.on('reportFinalScoreAck', (data) => {
+            const btn = document.querySelector('.action-button.report');
+            btn.textContent = data.ok ? 'Score Saved ✓' : 'No Match Found';
+            btn.classList.add(data.ok ? 'reset' : 'reset');
+            btn.style.background = data.ok ? '#2e7d32' : '#b71c1c';
+            setTimeout(() => {
+                btn.textContent = 'Report Final Score';
+                btn.style.background = '';
+            }, 2500);
+        });
+
         socket.on('gameUpdate', (gameState) => {
             console.log('📡 Received game update:', gameState);
             leftTeamInput.value = gameState.leftTeam;
@@ -784,6 +1014,12 @@
             }
             if (gameState.rightColor) {
                 rightColorPicker.value = gameState.rightColor;
+            }
+            if (gameState.leftScoreTextColor) {
+                leftScoreTextPicker.value = gameState.leftScoreTextColor;
+            }
+            if (gameState.rightScoreTextColor) {
+                rightScoreTextPicker.value = gameState.rightScoreTextColor;
             }
             if (gameState.textColor) {
                 textColorPicker.value = gameState.textColor;
@@ -814,6 +1050,14 @@
         
         rightColorPicker.addEventListener('change', (e) => {
             updateTeamColor('right', e.target.value);
+        });
+
+        leftScoreTextPicker.addEventListener('change', (e) => {
+            socket.emit('updateGlobalColor', { type: 'leftScoreText', color: e.target.value });
+        });
+
+        rightScoreTextPicker.addEventListener('change', (e) => {
+            socket.emit('updateGlobalColor', { type: 'rightScoreText', color: e.target.value });
         });
         
         leftColorPicker.addEventListener('focus', () => {
@@ -857,9 +1101,79 @@
                 socket.emit('resetGame');
             }
         }
+
+        function reportFinalScore() {
+            socket.emit('reportFinalScore', {
+                leftScore: parseInt(leftScoreEl.textContent, 10),
+                rightScore: parseInt(rightScoreEl.textContent, 10),
+            });
+        }
+
+        function nextGame() {
+            socket.emit('navigateMatchup', { direction: 1 });
+        }
+
+        function prevGame() {
+            socket.emit('navigateMatchup', { direction: -1 });
+        }
         
         // Video selector event listener
         videoSelector.addEventListener('change', updateCommercialButtons);
+
+        // Timer
+        let timerInterval = null;
+        let timerStartedAt = null;
+        let timerBaseMs = 0;
+
+        const timerHoursEl = document.getElementById('timerHours');
+        const timerMinutesEl = document.getElementById('timerMinutes');
+        const timerSecondsEl = document.getElementById('timerSeconds');
+
+        function timerUpdate() {
+            const elapsed = timerBaseMs + (Date.now() - timerStartedAt);
+            const totalSeconds = Math.floor(elapsed / 1000);
+            timerHoursEl.value = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+            timerMinutesEl.value = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+            timerSecondsEl.value = String(totalSeconds % 60).padStart(2, '0');
+        }
+
+        function timerReadMs() {
+            return (parseInt(timerHoursEl.value) || 0) * 3600000
+                 + (parseInt(timerMinutesEl.value) || 0) * 60000
+                 + (parseInt(timerSecondsEl.value) || 0) * 1000;
+        }
+
+        function timerStart() {
+            if (timerInterval) return;
+            timerBaseMs = timerReadMs();
+            timerStartedAt = Date.now();
+            timerInterval = setInterval(timerUpdate, 1000);
+        }
+
+        function timerStop() {
+            if (!timerInterval) return;
+            timerBaseMs += Date.now() - timerStartedAt;
+            clearInterval(timerInterval);
+            timerInterval = null;
+            timerStartedAt = null;
+        }
+
+        function timerRestart() {
+            clearInterval(timerInterval);
+            timerInterval = null;
+            timerBaseMs = 0;
+            timerHoursEl.value = '00';
+            timerMinutesEl.value = '00';
+            timerSecondsEl.value = '00';
+            timerStartedAt = Date.now();
+            timerInterval = setInterval(timerUpdate, 1000);
+        }
+
+        [timerHoursEl, timerMinutesEl, timerSecondsEl].forEach(el => {
+            el.addEventListener('change', () => {
+                if (!timerInterval) timerBaseMs = timerReadMs();
+            });
+        });
 
         // Initialize when page loads
         initializeColorPresets();

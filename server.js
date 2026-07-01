@@ -4,7 +4,7 @@ const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
 const { Atem } = require('atem-connection');
-const { spawn, exec } = require('child_process');
+const { spawn, exec, execFile } = require('child_process');
 
 const app = express();
 const server = http.createServer(app);
@@ -12,6 +12,7 @@ const io = socketIo(server);
 
 const PORT = process.env.PORT || 3000;
 const STATE_FILE = path.join(__dirname, 'gamestate.json');
+const BRACKET_FILE = path.join(__dirname, 'bracket.json');
 
 // ATEM Configuration
 const ATEM_IP = process.env.ATEM_IP || '10.42.0.100'; // Default ATEM IP
@@ -29,8 +30,11 @@ const defaultGameState = {
   rightTeam: 'Team 2',
   leftScore: 0,
   rightScore: 0,
-  leftColor: '#2E7D32',
-  rightColor: '#B71C1C',
+  leftColor: '#292929',
+  rightColor: '#ebebeb',
+  leftScoreTextColor: '#ffffff',
+  rightScoreTextColor: '#212121',
+  sidesSwapped: false,
   textColor: '#ffffff',
   backgroundColor: '#808080',
   commercialBreak: {
@@ -38,11 +42,14 @@ const defaultGameState = {
     videoPath: '',
     startTime: null
   },
+  barsActive: false,
+  barsAudioSnapshot: [],
   atemStatus: {
     connected: false,
     ip: ATEM_IP,
     currentInput: 1,
-    downstreamKeyEnabled: false
+    downstreamKeyEnabled: false,
+    upstreamKeyEnabled: false
   }
 };
 
@@ -121,6 +128,11 @@ async function connectToAtem() {
         console.log(`Downstream key ${DOWNSTREAM_KEY} status: ${gameState.atemStatus.downstreamKeyEnabled ? 'ON' : 'OFF'}`);
       }
 
+      if (state && state.video && state.video.mixEffects && state.video.mixEffects[0] && state.video.mixEffects[0].upstreamKeyers) {
+        gameState.atemStatus.upstreamKeyEnabled = state.video.mixEffects[0].upstreamKeyers[0]?.onAir || false;
+        console.log(`Upstream key status: ${gameState.atemStatus.upstreamKeyEnabled ? 'ON' : 'OFF'}`);
+      }
+
       saveGameState();
       io.emit('gameUpdate', gameState);
     });
@@ -153,6 +165,16 @@ async function connectToAtem() {
 
         // Update our game state to match ATEM reality
         gameState.atemStatus.downstreamKeyEnabled = dskState;
+        saveGameState();
+        io.emit('gameUpdate', gameState);
+      }
+
+      // Check for USK state changes
+      if (pathToChange.includes('video.mixEffects.0.upstreamKeyers')) {
+        const uskState = state.video?.mixEffects?.[0]?.upstreamKeyers?.[0]?.onAir || false;
+        console.log(`🔄 USK state changed to: ${uskState ? 'ON' : 'OFF'}`);
+
+        gameState.atemStatus.upstreamKeyEnabled = uskState;
         saveGameState();
         io.emit('gameUpdate', gameState);
       }
@@ -191,12 +213,17 @@ async function switchToGraphicsInput() {
     if (currentState && currentState.video && currentState.video.mixEffects && currentState.video.mixEffects[0]) {
       const currentInput = currentState.video.mixEffects[0].programInput;
 
-      // Only store as previous input if it's NOT the graphics input
-      if (currentInput !== GRAPHICS_INPUT) {
+      // Internal ATEM inputs that should never be restored to after a break:
+      // 0=Black, 1000=Bars, 2001=Color1, 2002=Color2
+      const internalInputs = [0, 1000, 2001, 2002];
+      if (currentInput === GRAPHICS_INPUT) {
+        console.log(`Current input ${currentInput} is graphics input - keeping previous input: ${previousInput}`);
+      } else if (internalInputs.includes(currentInput)) {
+        console.log(`Current input ${currentInput} is an internal source (black/bars/color) - defaulting previous input to camera 2`);
+        previousInput = 2;
+      } else {
         previousInput = currentInput;
         console.log(`Storing previous input: ${previousInput}`);
-      } else {
-        console.log(`Current input ${currentInput} is graphics input - keeping previous input: ${previousInput}`);
       }
 
       gameState.atemStatus.currentInput = currentInput;
@@ -267,10 +294,12 @@ async function setDownstreamKey(enabled) {
         await atem.setDownstreamKeyOnAir(keyIndex, enabled);
         console.log(`🔧 ATEM setDownstreamKeyOnAir command sent successfully`);
       }
-    } else {
-      // For DSK OFF or when already in target state, use direct command
+    } else if (currentDSKState !== enabled) {
+      // For DSK OFF, use direct command only if state needs to change
       await atem.setDownstreamKeyOnAir(keyIndex, enabled);
       console.log(`🔧 ATEM setDownstreamKeyOnAir command sent successfully`);
+    } else {
+      console.log(`🔧 DSK already in target state - skipping command`);
     }
 
     // Wait a moment and check if it actually changed
@@ -312,7 +341,7 @@ async function fadeDownstreamKey(fadeIn = true) {
     // Only auto transition if we need to change state
     if (currentDSKState !== fadeIn) {
       console.log('DSK state needs to change - triggering auto transition');
-      await atem.autoDownstreamKey(keyIndex);
+      await atem.autoDownstreamKey(keyIndex, fadeIn);
     } else {
       console.log('DSK already in target state - no transition needed');
     }
@@ -325,6 +354,17 @@ async function fadeDownstreamKey(fadeIn = true) {
     console.error('Failed to fade downstream key:', error);
     return false;
   }
+}
+
+// ── AP Channel Helper ──
+
+const VALID_5GHZ_CHANNELS = [36,40,44,48,52,56,60,64,100,104,108,112,116,120,124,128,132,136,140,144,149,153,157,161,165];
+
+function freqToChannel(ghz) {
+  const mhz = Math.round(ghz * 1000);
+  if (mhz >= 5180 && mhz <= 5825) return Math.round((mhz - 5000) / 5);
+  if (mhz >= 2412 && mhz <= 2484) return Math.round((mhz - 2407) / 5);
+  return null;
 }
 
 app.use(express.static('public'));
@@ -345,9 +385,190 @@ app.get('/network', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'network.html'));
 });
 
+app.get('/apchannel', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'apchannel.html'));
+});
+
+app.get('/bracket', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'bracket.html'));
+});
+
+app.get('/teams', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'teams.html'));
+});
+
+app.get('/api/bracket', (req, res) => {
+  try {
+    if (fs.existsSync(BRACKET_FILE)) {
+      const data = fs.readFileSync(BRACKET_FILE, 'utf8');
+      res.json(JSON.parse(data));
+    } else {
+      res.status(404).json({ error: 'No saved bracket' });
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/bracket', express.json(), (req, res) => {
+  try {
+    fs.writeFileSync(BRACKET_FILE, JSON.stringify(req.body, null, 2));
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/bracket/score', express.json(), (req, res) => {
+  try {
+    const { idx, ls, rs, final: isFinal } = req.body;
+    if (!fs.existsSync(BRACKET_FILE)) return res.status(404).json({ error: 'No bracket saved' });
+    const bracket = JSON.parse(fs.readFileSync(BRACKET_FILE, 'utf8'));
+    const match = bracket.matchups[idx];
+    if (!match || match.group !== undefined) return res.status(400).json({ error: 'Invalid index' });
+    match.ls = ls;
+    match.rs = rs;
+    match.final = isFinal === true;
+    fs.writeFileSync(BRACKET_FILE, JSON.stringify(bracket, null, 2));
+    io.emit('bracketUpdated');
+    console.log(`Score updated [${idx}]: ${match.left} ${ls} - ${rs} ${match.right} (final: ${match.final})`);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/test-black', (req, res) => {
+  io.emit('displayBlack', true);
+  res.json({ ok: true });
+});
+
+app.get('/api/reload-display', (req, res) => {
+  io.emit('reloadPage');
+  res.json({ ok: true });
+});
+
 app.get('/api/videos', (req, res) => {
   const videos = getAvailableVideos();
   res.json(videos);
+});
+
+// HTTP API for score updates (used by keyboard controller)
+app.post('/api/score/:side/:change', (req, res) => {
+  const { side, change } = req.params;
+  const delta = parseInt(change, 10);
+
+  if (!['left', 'right'].includes(side) || isNaN(delta)) {
+    return res.status(400).json({ error: 'Invalid side or change value' });
+  }
+
+  if (side === 'left') {
+    gameState.leftScore = Math.max(0, gameState.leftScore + delta);
+  } else {
+    gameState.rightScore = Math.max(0, gameState.rightScore + delta);
+  }
+
+  saveGameState();
+  io.emit('gameUpdate', gameState);
+  res.json({ side, score: side === 'left' ? gameState.leftScore : gameState.rightScore });
+});
+
+// HTTP API for bracket navigation (used by keyboard controller)
+app.post('/api/prev-game', (req, res) => {
+  try {
+    if (!fs.existsSync(BRACKET_FILE)) return res.status(404).json({ error: 'No bracket saved' });
+    const bracket = JSON.parse(fs.readFileSync(BRACKET_FILE, 'utf8'));
+    const currentIdx = gameState.loadedMatchupIndex ?? -1;
+    const nextIdx = findNextMatchupIndex(bracket.matchups, currentIdx, -1);
+    if (nextIdx !== null) {
+      loadMatchupByIndex(bracket.matchups, nextIdx, true);
+      res.json({ ok: true, index: nextIdx });
+    } else {
+      res.json({ ok: false, error: 'No previous matchup' });
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/next-game', (req, res) => {
+  try {
+    if (!fs.existsSync(BRACKET_FILE)) return res.status(404).json({ error: 'No bracket saved' });
+    const bracket = JSON.parse(fs.readFileSync(BRACKET_FILE, 'utf8'));
+    const currentIdx = gameState.loadedMatchupIndex ?? -1;
+    const nextIdx = findNextMatchupIndex(bracket.matchups, currentIdx, 1);
+    if (nextIdx !== null) {
+      loadMatchupByIndex(bracket.matchups, nextIdx, true);
+      res.json({ ok: true, index: nextIdx });
+    } else {
+      res.json({ ok: false, error: 'No next matchup' });
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/report-final-score', (req, res) => {
+  try {
+    if (gameState.loadedMatchupIndex == null) return res.status(400).json({ ok: false, error: 'No matchup loaded' });
+    if (!fs.existsSync(BRACKET_FILE)) return res.status(404).json({ error: 'No bracket saved' });
+    const bracket = JSON.parse(fs.readFileSync(BRACKET_FILE, 'utf8'));
+    const match = bracket.matchups[gameState.loadedMatchupIndex];
+    if (!match || match.group !== undefined) return res.status(400).json({ ok: false, error: 'Invalid matchup index' });
+    match.ls = gameState.leftScore;
+    match.rs = gameState.rightScore;
+    match.final = true;
+    fs.writeFileSync(BRACKET_FILE, JSON.stringify(bracket, null, 2));
+    io.emit('bracketUpdated');
+    console.log(`Final score reported via HTTP [${gameState.loadedMatchupIndex}]: ${match.left} ${match.ls} - ${match.rs} ${match.right}`);
+    const nextIdx = findNextMatchupIndex(bracket.matchups, gameState.loadedMatchupIndex, 1);
+    if (nextIdx !== null) {
+      loadMatchupByIndex(bracket.matchups, nextIdx);
+      res.json({ ok: true, advanced: true, index: nextIdx });
+    } else {
+      res.json({ ok: true, advanced: false });
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// HTTP API for swap sides (used by keyboard controller)
+app.post('/api/swap-sides', (req, res) => {
+  const tempTeam = gameState.leftTeam;
+  const tempScore = gameState.leftScore;
+  const tempColor = gameState.leftColor;
+  const tempScoreText = gameState.leftScoreTextColor;
+  gameState.leftTeam = gameState.rightTeam;
+  gameState.leftScore = gameState.rightScore;
+  gameState.leftColor = gameState.rightColor;
+  gameState.leftScoreTextColor = gameState.rightScoreTextColor;
+  gameState.rightTeam = tempTeam;
+  gameState.rightScore = tempScore;
+  gameState.rightColor = tempColor;
+  gameState.rightScoreTextColor = tempScoreText;
+  gameState.sidesSwapped = !gameState.sidesSwapped;
+  saveGameState();
+  io.emit('gameUpdate', gameState);
+  res.json({ success: true });
+});
+
+// HTTP API for ATEM input switching (used by keyboard controller)
+app.post('/api/atem/input/:num', async (req, res) => {
+  const input = parseInt(req.params.num, 10);
+  if (isNaN(input) || input < 1) return res.status(400).json({ error: 'Invalid input number' });
+  if (!atem || !atemConnected) return res.status(503).json({ error: 'ATEM not connected' });
+  try {
+    console.log(`Direct cut to input: ${input}`);
+    await atem.changeProgramInput(input);
+    gameState.atemStatus.currentInput = input;
+    saveGameState();
+    io.emit('gameUpdate', gameState);
+    res.json({ success: true, input });
+  } catch (error) {
+    console.error('Failed to switch ATEM input:', error);
+    res.status(500).json({ error: 'Failed to switch input' });
+  }
 });
 
 // Global error handlers
@@ -358,6 +579,44 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
+
+function findNextMatchupIndex(matchups, currentIdx, direction) {
+  let i = currentIdx + direction;
+  while (i >= 0 && i < matchups.length) {
+    if (!matchups[i].group) return i;
+    i += direction;
+  }
+  return null;
+}
+
+function loadMatchupByIndex(matchups, idx, restoreScores = false) {
+  const m = matchups[idx];
+  if (!m || m.group) return;
+  const lstc = m.lstc || defaultGameState.leftScoreTextColor;
+  const rstc = m.rstc || defaultGameState.rightScoreTextColor;
+  if (gameState.sidesSwapped) {
+    gameState.leftTeam  = m.right;
+    gameState.rightTeam = m.left;
+    gameState.leftColor  = m.rc;
+    gameState.rightColor = m.lc;
+    gameState.leftScoreTextColor  = rstc;
+    gameState.rightScoreTextColor = lstc;
+    gameState.leftScore  = (restoreScores && m.rs != null) ? m.rs : 0;
+    gameState.rightScore = (restoreScores && m.ls != null) ? m.ls : 0;
+  } else {
+    gameState.leftTeam  = m.left;
+    gameState.rightTeam = m.right;
+    gameState.leftColor  = m.lc;
+    gameState.rightColor = m.rc;
+    gameState.leftScoreTextColor  = lstc;
+    gameState.rightScoreTextColor = rstc;
+    gameState.leftScore  = (restoreScores && m.ls != null) ? m.ls : 0;
+    gameState.rightScore = (restoreScores && m.rs != null) ? m.rs : 0;
+  }
+  gameState.loadedMatchupIndex = idx;
+  saveGameState();
+  io.emit('gameUpdate', gameState);
+}
 
 io.on('connection', (socket) => {
   console.log('Client connected');
@@ -395,6 +654,10 @@ io.on('connection', (socket) => {
         gameState.textColor = data.color;
       } else if (data.type === 'background') {
         gameState.backgroundColor = data.color;
+      } else if (data.type === 'leftScoreText') {
+        gameState.leftScoreTextColor = data.color;
+      } else if (data.type === 'rightScoreText') {
+        gameState.rightScoreTextColor = data.color;
       }
       saveGameState();
       io.emit('gameUpdate', gameState);
@@ -417,12 +680,16 @@ io.on('connection', (socket) => {
     const tempTeam = gameState.leftTeam;
     const tempScore = gameState.leftScore;
     const tempColor = gameState.leftColor;
+    const tempScoreText = gameState.leftScoreTextColor;
     gameState.leftTeam = gameState.rightTeam;
     gameState.leftScore = gameState.rightScore;
     gameState.leftColor = gameState.rightColor;
+    gameState.leftScoreTextColor = gameState.rightScoreTextColor;
     gameState.rightTeam = tempTeam;
     gameState.rightScore = tempScore;
     gameState.rightColor = tempColor;
+    gameState.rightScoreTextColor = tempScoreText;
+    gameState.sidesSwapped = !gameState.sidesSwapped;
     saveGameState();
     io.emit('gameUpdate', gameState);
   });
@@ -434,32 +701,154 @@ io.on('connection', (socket) => {
     io.emit('gameUpdate', gameState);
   });
 
+  socket.on('reportFinalScore', (data) => {
+    try {
+      if (gameState.loadedMatchupIndex == null) {
+        console.log('reportFinalScore: no matchup currently loaded');
+        socket.emit('reportFinalScoreAck', { ok: false });
+        return;
+      }
+      if (!fs.existsSync(BRACKET_FILE)) {
+        console.log('reportFinalScore: bracket.json not saved yet');
+        socket.emit('reportFinalScoreAck', { ok: false });
+        return;
+      }
+      const bracket = JSON.parse(fs.readFileSync(BRACKET_FILE, 'utf8'));
+      const match = bracket.matchups[gameState.loadedMatchupIndex];
+      if (!match || match.group !== undefined) {
+        console.log('reportFinalScore: matchup index invalid');
+        socket.emit('reportFinalScoreAck', { ok: false });
+        return;
+      }
+      match.ls = data.leftScore;
+      match.rs = data.rightScore;
+      match.final = true;
+      fs.writeFileSync(BRACKET_FILE, JSON.stringify(bracket, null, 2));
+      io.emit('bracketUpdated');
+      console.log(`Final score reported [${gameState.loadedMatchupIndex}]: ${match.left} ${data.leftScore} - ${data.rightScore} ${match.right}`);
+
+      // Auto-advance to next matchup
+      const nextIdx = findNextMatchupIndex(bracket.matchups, gameState.loadedMatchupIndex, 1);
+      if (nextIdx !== null) {
+        loadMatchupByIndex(bracket.matchups, nextIdx);
+        socket.emit('reportFinalScoreAck', { ok: true, advanced: true });
+      } else {
+        socket.emit('reportFinalScoreAck', { ok: true, advanced: false });
+      }
+    } catch (e) {
+      console.error('reportFinalScore error:', e);
+      socket.emit('reportFinalScoreAck', { ok: false });
+    }
+  });
+
+  socket.on('navigateMatchup', (data) => {
+    try {
+      if (!fs.existsSync(BRACKET_FILE)) return;
+      const bracket = JSON.parse(fs.readFileSync(BRACKET_FILE, 'utf8'));
+      const currentIdx = gameState.loadedMatchupIndex ?? -1;
+      const nextIdx = findNextMatchupIndex(bracket.matchups, currentIdx, data.direction);
+      if (nextIdx !== null) {
+        loadMatchupByIndex(bracket.matchups, nextIdx, true);
+      }
+    } catch (e) {
+      console.error('navigateMatchup error:', e);
+    }
+  });
+
+  socket.on('loadMatchup', (data) => {
+    gameState.leftTeam  = data.leftTeam;
+    gameState.rightTeam = data.rightTeam;
+    gameState.leftColor  = data.leftColor;
+    gameState.rightColor = data.rightColor;
+    gameState.leftScore  = data.leftScore ?? 0;
+    gameState.rightScore = data.rightScore ?? 0;
+    gameState.loadedMatchupIndex = data.matchupIndex ?? null;
+    saveGameState();
+    io.emit('gameUpdate', gameState);
+  });
+
   socket.on('startCommercialBreak', async (data) => {
     console.log('Starting commercial break:', data.videoPath);
+
+    // Capture USK state before the break so we can restore it afterwards
+    const uskWasActive = gameState.atemStatus.upstreamKeyEnabled;
+    console.log(`🎬 USK state at break start: ${uskWasActive ? 'ON' : 'OFF'}`);
+
+    // If bars are active, inherit their pre-bars audio snapshot so stop-commercial
+    // restores to the state before bars (not the all-muted bars state).
+    // Otherwise snapshot current live audio state.
+    // Inputs: 1=HDMI1(graphics), 2=HDMI2(cam1), 3=HDMI3(cam2), 4=HDMI4(cam3)
+    // 1301=mic1 (two mono sources: -256, -255), 1302=mic2 stereo (source: -65280)
+    let audioSnapshot = [];
+    if (gameState.barsActive && gameState.barsAudioSnapshot.length > 0) {
+      audioSnapshot = gameState.barsAudioSnapshot;
+      console.log('🎬 Bars were active — inheriting bars audio snapshot for commercial break restore');
+      gameState.barsActive = false;
+      gameState.barsAudioSnapshot = [];
+    } else if (atemConnected && atem.state && atem.state.fairlight && atem.state.fairlight.inputs) {
+      const inputs = atem.state.fairlight.inputs;
+      for (const [inputIndex, input] of Object.entries(inputs)) {
+        for (const [sourceKey, source] of Object.entries(input.sources)) {
+          const mixOption = source.properties.mixOption;
+          audioSnapshot.push({ inputIndex: parseInt(inputIndex), sourceKey, mixOption });
+          console.log(`🎬 Audio snapshot: input ${inputIndex} source ${sourceKey} mixOption=${mixOption}`);
+        }
+      }
+    }
+
+    // Tell display page to go black before ATEM operations
+    io.emit('displayBlack', true);
 
     // ATEM sequence: Fade out downstream key -> Switch to graphics input -> Ensure DSK stays OFF
     if (atemConnected) {
       console.log('🎬 ATEM: Starting commercial break sequence...');
 
-      // Step 1: Fade out the downstream key (turn OFF to hide scoreboard overlay)
+      // Step 1: Turn off USK if it was active
+      if (uskWasActive) {
+        console.log('🎬 Turning off USK for commercial break...');
+        await atem.setUpstreamKeyerOnAir(false, 0, 0);
+        gameState.atemStatus.upstreamKeyEnabled = false;
+      }
+
+      // Step 2: Fade out the downstream key (turn OFF to hide scoreboard overlay)
       await fadeDownstreamKey(false);
 
       // Wait for DSK fade to complete (ATEM auto transition time is typically 1-2 seconds)
       console.log('Waiting for DSK fade to complete...');
       await new Promise(resolve => setTimeout(resolve, 2500));
 
-      // Step 2: Switch to graphics input
+      // Step 3: Switch to graphics input
       await switchToGraphicsInput();
 
-      // Step 3: Ensure DSK stays OFF on graphics input (immediate cut)
+      // Step 4: Ensure DSK stays OFF on graphics input (immediate cut)
       console.log('Ensuring DSK stays OFF on graphics input...');
       await setDownstreamKey(false);
+
+      // Step 5: Ensure Pi HDMI audio output is at full volume (Chromium/PipeWire can drop it)
+      console.log('🎬 Ensuring Pi HDMI audio volume is at 100%...');
+      exec('wpctl set-volume 56 1.0', (err) => {
+        if (err) console.error('🎬 Failed to set HDMI volume:', err.message);
+        else console.log('🎬 Pi HDMI audio volume set to 1.0');
+      });
+
+      // Step 6: Mute all inputs except graphics HDMI (input 1)
+      console.log('🎬 Muting audio inputs for commercial break...');
+      for (const ch of audioSnapshot) {
+        if (ch.inputIndex === GRAPHICS_INPUT) {
+          console.log(`🎬 Leaving graphics audio input ${ch.inputIndex} source ${ch.sourceKey} unchanged`);
+        } else {
+          console.log(`🎬 Muting input ${ch.inputIndex} source ${ch.sourceKey}`);
+          await atem.setFairlightAudioMixerSourceProps(ch.inputIndex, BigInt(ch.sourceKey), { mixOption: 1 }); // 1 = Off
+        }
+      }
     }
 
     gameState.commercialBreak = {
       active: true,
       videoPath: data.videoPath,
-      startTime: Date.now()
+      startTime: Date.now(),
+      uskWasActive,
+      audioSnapshot
     };
     saveGameState();
     io.emit('gameUpdate', gameState);
@@ -467,6 +856,11 @@ io.on('connection', (socket) => {
 
   socket.on('stopCommercialBreak', async () => {
     console.log('Stopping commercial break');
+
+    // Capture state before wiping commercialBreak
+    const uskWasActive = gameState.commercialBreak.uskWasActive || false;
+    const audioSnapshot = gameState.commercialBreak.audioSnapshot || [];
+    console.log(`🎬 USK was active before break: ${uskWasActive}`);
 
     // IMMEDIATELY stop the video on frontend before doing ATEM operations
     gameState.commercialBreak = {
@@ -492,6 +886,22 @@ io.on('connection', (socket) => {
       // Step 3: Turn the DSK back ON for camera overlay
       console.log('🎬 Turning DSK back ON for camera overlay...');
       await setDownstreamKey(true);
+
+      // Step 4: Turn USK on as DSK fades in
+      console.log('🎬 Turning USK on after commercial break...');
+      await atem.setUpstreamKeyerOnAir(true, 0, 0);
+      gameState.atemStatus.upstreamKeyEnabled = true;
+
+      // Step 5: Restore HDMI camera inputs only (inputs 2-4); leave mics muted for manual restore
+      if (audioSnapshot.length > 0) {
+        console.log('🎬 Restoring camera audio inputs after commercial break...');
+        for (const ch of audioSnapshot) {
+          if (ch.inputIndex !== GRAPHICS_INPUT) {
+            console.log(`🎬 Restoring input ${ch.inputIndex} source ${ch.sourceKey} to mixOption=${ch.mixOption}`);
+            await atem.setFairlightAudioMixerSourceProps(ch.inputIndex, BigInt(ch.sourceKey), { mixOption: ch.mixOption });
+          }
+        }
+      }
 
       console.log('Commercial break end sequence complete - DSK restored for camera');
     }
@@ -537,6 +947,188 @@ io.on('connection', (socket) => {
     io.emit('gameUpdate', gameState);
   });
 
+  socket.on('atemToggleUpstreamKey', async () => {
+    console.log('🔧 MANUAL USK TOGGLE REQUESTED - someone clicked the button');
+    if (!atem || !atemConnected) {
+      console.log('ATEM not connected - cannot toggle upstream key');
+      return;
+    }
+
+    const newState = !gameState.atemStatus.upstreamKeyEnabled;
+    console.log(`🔧 USK toggle: ${gameState.atemStatus.upstreamKeyEnabled ? 'ON' : 'OFF'} -> ${newState ? 'ON' : 'OFF'}`);
+    try {
+      await atem.setUpstreamKeyerOnAir(newState, 0, 0);
+      gameState.atemStatus.upstreamKeyEnabled = newState;
+      saveGameState();
+      io.emit('gameUpdate', gameState);
+    } catch (error) {
+      console.error('Failed to toggle upstream key:', error);
+    }
+  });
+
+  socket.on('atemStartBars', async () => {
+    if (!atem || !atemConnected) {
+      console.log('ATEM not connected - cannot start/stop bars');
+      return;
+    }
+    if (gameState.commercialBreak && gameState.commercialBreak.active) {
+      console.log('🎬 Cannot start/stop bars during commercial break');
+      return;
+    }
+
+    try {
+      if (!gameState.barsActive) {
+        // ── Entering bars ──
+        console.log('🎬 Start Bars requested');
+
+        // Snapshot audio before muting
+        const barsAudioSnapshot = [];
+        if (atem.state && atem.state.fairlight && atem.state.fairlight.inputs) {
+          for (const [inputIndex, input] of Object.entries(atem.state.fairlight.inputs)) {
+            for (const [sourceKey, source] of Object.entries(input.sources)) {
+              const mixOption = source.properties.mixOption;
+              barsAudioSnapshot.push({ inputIndex: parseInt(inputIndex), sourceKey, mixOption });
+              console.log(`🎬 Bars audio snapshot: input ${inputIndex} source ${sourceKey} mixOption=${mixOption}`);
+            }
+          }
+        }
+        gameState.barsAudioSnapshot = barsAudioSnapshot;
+        gameState.barsActive = true;
+
+        // Cut to bars so key changes happen off-camera
+        console.log('🎬 Cutting to bars...');
+        await atem.changeProgramInput(1000);
+        gameState.atemStatus.currentInput = 1000;
+
+        // Turn off DSK if active
+        if (gameState.atemStatus.downstreamKeyEnabled) {
+          console.log('🎬 Turning off DSK for bars...');
+          await setDownstreamKey(false);
+        }
+
+        // Turn off USK if active
+        if (gameState.atemStatus.upstreamKeyEnabled) {
+          console.log('🎬 Turning off USK for bars...');
+          await atem.setUpstreamKeyerOnAir(false, 0, 0);
+          gameState.atemStatus.upstreamKeyEnabled = false;
+        }
+
+        // Mute all inputs except graphics
+        console.log('🎬 Muting all audio inputs for bars...');
+        for (const ch of barsAudioSnapshot) {
+          if (ch.inputIndex !== GRAPHICS_INPUT) {
+            await atem.setFairlightAudioMixerSourceProps(ch.inputIndex, BigInt(ch.sourceKey), { mixOption: 1 });
+          }
+        }
+
+        saveGameState();
+        io.emit('gameUpdate', gameState);
+        console.log('🎬 Bars sequence complete');
+
+      } else {
+        // ── Leaving bars ──
+        console.log('🎬 Stop Bars requested');
+
+        const snapshot = gameState.barsAudioSnapshot || [];
+        gameState.barsActive = false;
+        gameState.barsAudioSnapshot = [];
+
+        // Switch back to previous camera input
+        console.log(`🎬 Switching back to previous input: ${previousInput}`);
+        await atem.changeProgramInput(previousInput);
+        gameState.atemStatus.currentInput = previousInput;
+
+        // Restore all audio inputs to pre-bars state
+        if (snapshot.length > 0) {
+          console.log('🎬 Restoring audio from bars snapshot...');
+          for (const ch of snapshot) {
+            if (ch.inputIndex !== GRAPHICS_INPUT) {
+              console.log(`🎬 Restoring input ${ch.inputIndex} source ${ch.sourceKey} to mixOption=${ch.mixOption}`);
+              await atem.setFairlightAudioMixerSourceProps(ch.inputIndex, BigInt(ch.sourceKey), { mixOption: ch.mixOption });
+            }
+          }
+        }
+
+        saveGameState();
+        io.emit('gameUpdate', gameState);
+        console.log('🎬 Stop bars sequence complete');
+      }
+    } catch (error) {
+      console.error('Failed to start/stop bars:', error);
+    }
+  });
+
+  // ── AP Channel Management ──
+
+  socket.on('getApConfig', (callback) => {
+    exec('cat /etc/hostapd/hostapd.conf', (err, stdout) => {
+      if (err) return callback({ error: err.message });
+      const chMatch = stdout.match(/^channel=(\d+)/m);
+      const htMatch = stdout.match(/^ht_capab=(.+)/m);
+      const channel = chMatch ? parseInt(chMatch[1]) : null;
+      const htCapab = htMatch ? htMatch[1].trim() : '';
+      callback({ channel, htCapab });
+    });
+  });
+
+  socket.on('setApChannel', (data, callback) => {
+    const ch = parseInt(data.channel);
+    if (!VALID_5GHZ_CHANNELS.includes(ch)) {
+      return callback({ error: 'Invalid channel number' });
+    }
+    // Validate channel is compatible with ht_capab before writing
+    exec('cat /etc/hostapd/hostapd.conf', (err0, conf) => {
+      if (!err0) {
+        const htMatch = conf.match(/^ht_capab=(.+)/m);
+        const htCapab = htMatch ? htMatch[1] : '';
+        const hasPlus  = htCapab.includes('[HT40+]');
+        const hasMinus = htCapab.includes('[HT40-]');
+        const ht40PlusOnly  = [36,44,52,60,100,108,116,124,132,140,149,157];
+        const ht40MinusOnly = [40,48,56,64,104,112,120,128,136,144,153,161];
+        if (hasPlus && !hasMinus && !ht40PlusOnly.includes(ch)) {
+          return callback({ error: `Channel ${ch} is not valid for HT40+ mode. Valid channels: ${ht40PlusOnly.join(', ')}` });
+        }
+        if (hasMinus && !hasPlus && !ht40MinusOnly.includes(ch)) {
+          return callback({ error: `Channel ${ch} is not valid for HT40- mode. Valid channels: ${ht40MinusOnly.join(', ')}` });
+        }
+      }
+      exec(`sudo sed -i 's/^channel=.*/channel=${ch}/' /etc/hostapd/hostapd.conf`, (err) => {
+        if (err) return callback({ error: 'Failed to update hostapd.conf: ' + err.message });
+        exec('sudo systemctl restart hostapd', (err2) => {
+          if (err2) return callback({ error: 'Channel written but hostapd restart failed: ' + err2.message });
+          console.log(`AP channel changed to ${ch}`);
+          callback({ success: true, channel: ch });
+        });
+      });
+    });
+  });
+
+  socket.on('scanApChannels', (data, callback) => {
+    const iface = data.iface;
+    if (!iface || /[;&|`$<>]/.test(iface)) return callback({ error: 'Invalid interface name' });
+    exec(`sudo iwlist "${iface}" scan 2>&1`, { timeout: 20000 }, (err, stdout) => {
+      if (err && !stdout) return callback({ error: err.message });
+      // Parse each Cell block
+      const channels = {};
+      const blocks = stdout.split(/(?=\s*Cell \d+)/);
+      blocks.forEach(block => {
+        const chMatch = block.match(/Channel:(\d+)/);
+        const essidMatch = block.match(/ESSID:"([^"]*)"/);
+        const signalMatch = block.match(/Signal level=(-?\d+)/);
+        const freqMatch = block.match(/Frequency:([\d.]+)/);
+        if (!chMatch) return;
+        const ch = parseInt(chMatch[1]);
+        const freq = freqMatch ? parseFloat(freqMatch[1]) : 0;
+        if (freq < 5) return; // skip 2.4 GHz
+        const essid = essidMatch ? essidMatch[1] : '(hidden)';
+        const signal = signalMatch ? parseInt(signalMatch[1]) : null;
+        if (!channels[ch]) channels[ch] = [];
+        channels[ch].push({ essid, signal });
+      });
+      callback({ channels });
+    });
+  });
+
   socket.on('disconnect', () => {
     console.log('Client disconnected');
   });
@@ -572,87 +1164,39 @@ io.on('connection', (socket) => {
       return callback({ error: 'Invalid interface name' });
     }
 
-    // Get current connection before disconnecting
-    exec(`nmcli -t -f DEVICE,CONNECTION dev status`, (err, stdout) => {
-      let previousCon = '';
-      if (!err) {
-        const match = stdout.split('\n').find(l => l.startsWith(iface + ':'));
-        if (match) {
-          previousCon = match.split(':').slice(1).join(':');
-          if (previousCon === '--') previousCon = '';
+    // Get the active NM connection profile name (used by reconnectPrevious)
+    execFile('sudo', ['nmcli', '-t', '-f', 'GENERAL.CONNECTION', 'dev', 'show', iface], (_, devOut) => {
+      const previousCon = (devOut || '').match(/^GENERAL\.CONNECTION:(.+)$/m)?.[1]?.trim() || '';
+      const previousConnection = previousCon === '--' ? '' : previousCon;
+
+      // Scan via NM
+      execFile('sudo', ['nmcli', '-t', '-f', 'SSID,BSSID,SECURITY,SIGNAL', 'dev', 'wifi', 'list', 'ifname', iface, '--rescan', 'yes'],
+        { timeout: 15000 }, (err2, stdout2) => {
+        if (err2 && !stdout2) {
+          return callback({ error: err2.message, previousConnection });
         }
-      }
 
-      // Disconnect for full scan
-      const disconnectCmd = previousCon
-        ? `sudo nmcli dev disconnect "${iface}" 2>/dev/null; sleep 2`
-        : 'sleep 0';
+        const seen = new Set();
+        const ssids = [];
+        (stdout2 || '').split('\n').forEach(line => {
+          // nmcli -t output: SSID:BSSID:SECURITY:SIGNAL — colons in SSID are escaped as \:
+          const parts = line.split(/(?<!\\):/g);
+          const ssid = parts[0]?.replace(/\\:/g, ':').trim();
+          if (!ssid || ssid === 'switcher_net' || seen.has(ssid)) return;
+          seen.add(ssid);
+          ssids.push(ssid);
+        });
 
-      exec(disconnectCmd, () => {
-        // Scan
-        exec(`nmcli -g SSID dev wifi list ifname "${iface}" --rescan yes`, (err2, stdout2) => {
-          if (err2) {
-            console.error('WiFi scan error:', err2.message);
-            return callback({ error: err2.message, previousConnection: previousCon });
-          }
-
-          const seen = new Set();
-          const ssids = [];
-          stdout2.trim().split('\n').forEach(ssid => {
-            ssid = ssid.trim();
-            if (!ssid || ssid === 'switcher_net' || seen.has(ssid)) return;
-            seen.add(ssid);
-            ssids.push(ssid);
+        // Get saved NM WiFi profiles to mark known networks
+        execFile('sudo', ['nmcli', '-t', '-f', 'NAME,TYPE', 'con', 'show'], (_, conOut) => {
+          const savedNames = new Set();
+          (conOut || '').split('\n').forEach(line => {
+            const [name, type] = line.split(':');
+            if (type?.trim() === '802-11-wireless') savedNames.add(name?.trim());
           });
 
-          // Check which SSIDs have saved connections
-          exec('nmcli -t -f NAME,TYPE con show', (err3, stdout3) => {
-            const savedConnections = [];
-            if (!err3) {
-              stdout3.trim().split('\n').forEach(line => {
-                if (line.endsWith(':802-11-wireless')) {
-                  savedConnections.push(line.replace(':802-11-wireless', ''));
-                }
-              });
-            }
-
-            // For each SSID, check if there's a matching saved connection
-            let checksRemaining = ssids.length;
-            const results = ssids.map(ssid => ({ ssid, saved: false }));
-
-            if (checksRemaining === 0) {
-              return callback({ networks: results, previousConnection: previousCon });
-            }
-
-            results.forEach((entry, idx) => {
-              // Check if any saved connection has this SSID
-              let found = false;
-              let conChecks = savedConnections.length;
-
-              if (conChecks === 0) {
-                checksRemaining--;
-                if (checksRemaining === 0) {
-                  callback({ networks: results, previousConnection: previousCon });
-                }
-                return;
-              }
-
-              savedConnections.forEach(conName => {
-                exec(`nmcli -g 802-11-wireless.ssid con show "${conName}" 2>/dev/null`, (e, out) => {
-                  if (!e && out.trim() === entry.ssid) {
-                    results[idx].saved = true;
-                  }
-                  conChecks--;
-                  if (conChecks === 0) {
-                    checksRemaining--;
-                    if (checksRemaining === 0) {
-                      callback({ networks: results, previousConnection: previousCon });
-                    }
-                  }
-                });
-              });
-            });
-          });
+          const results = ssids.map(ssid => ({ ssid, saved: savedNames.has(ssid) }));
+          callback({ networks: results, previousConnection });
         });
       });
     });
@@ -663,89 +1207,73 @@ io.on('connection', (socket) => {
     if (!iface || !ssid || /[;&|`$]/.test(iface)) {
       return callback({ error: 'Invalid parameters' });
     }
-    // Sanitize ssid for shell — use single quotes with escaping
-    const safeSSID = ssid.replace(/'/g, "'\\''");
 
-    // Check for existing saved connection matching this SSID
-    exec('nmcli -t -f NAME,TYPE con show', (err, stdout) => {
-      const wifiCons = [];
-      if (!err) {
-        stdout.trim().split('\n').forEach(line => {
-          if (line.endsWith(':802-11-wireless')) {
-            wifiCons.push(line.replace(':802-11-wireless', ''));
-          }
-        });
-      }
+    console.log(`Connecting ${iface} to ${ssid} via nmcli`);
 
-      // Find a saved connection matching this SSID
-      let checksRemaining = wifiCons.length;
-      let existingCon = null;
+    // Rescan on this specific interface so nmcli's cache is fresh before connecting
+    execFile('sudo', ['nmcli', 'dev', 'wifi', 'list', 'ifname', iface, '--rescan', 'yes'], { timeout: 15000 }, () => {
 
-      if (checksRemaining === 0) {
-        // No saved connections, create new
-        return createAndConnect();
-      }
-
-      wifiCons.forEach(conName => {
-        exec(`nmcli -g 802-11-wireless.ssid con show "${conName}" 2>/dev/null`, (e, out) => {
-          if (!e && out.trim() === ssid) {
-            existingCon = conName;
-          }
-          checksRemaining--;
-          if (checksRemaining === 0) {
-            if (existingCon) {
-              // Use existing connection
-              exec(`sudo nmcli con up "${existingCon}"`, (err2, stdout2) => {
-                if (err2) {
-                  console.error('nmcli con up error:', err2.message);
-                  return callback({ error: err2.message });
-                }
-                console.log(`WiFi connected to saved: ${existingCon}`);
-                callback({ success: true, message: `Connected to ${ssid}` });
-              });
-            } else {
-              createAndConnect();
-            }
-          }
-        });
+    // Find any saved profile for this SSID so we can clear its interface lock
+    execFile('sudo', ['nmcli', '-t', '-f', 'NAME,TYPE', 'con', 'show'], (_, conOut) => {
+      let savedProfile = null;
+      (conOut || '').split('\n').forEach(line => {
+        const [name, type] = line.split(':');
+        if (type?.trim() === '802-11-wireless' && name?.trim() === ssid) {
+          savedProfile = name.trim();
+        }
       });
 
-      function createAndConnect() {
-        let addCmd = `sudo nmcli con add type wifi con-name '${safeSSID}' ifname "${iface}" ssid '${safeSSID}' ipv4.method auto`;
-        if (passphrase) {
-          const safePsk = passphrase.replace(/'/g, "'\\''");
-          addCmd += ` wifi-sec.key-mgmt wpa-psk wifi-sec.psk '${safePsk}'`;
-        }
-        exec(addCmd, (err2) => {
-          if (err2) {
-            console.error('nmcli con add error:', err2.message);
-            return callback({ error: err2.message });
+      function doConnect() {
+        const args = passphrase
+          ? ['dev', 'wifi', 'connect', ssid, 'password', passphrase, 'ifname', iface]
+          : ['dev', 'wifi', 'connect', ssid, 'ifname', iface];
+
+        execFile('sudo', ['nmcli', ...args], { timeout: 60000 }, (err, stdout, stderr) => {
+          if (err) {
+            const msg = (stderr || stdout || err.message || '').trim();
+            console.error(`nmcli connect error for ${ssid}:`, msg);
+            return callback({ error: msg || `Failed to connect to ${ssid}` });
           }
-          exec(`sudo nmcli con up '${safeSSID}'`, (err3) => {
-            if (err3) {
-              console.error('nmcli con up error:', err3.message);
-              return callback({ error: err3.message });
+          console.log(`WiFi connected: ${iface} -> ${ssid}`, stdout.trim());
+          callback({ success: true, message: `Connected to ${ssid}` });
+        });
+      }
+
+      if (savedProfile) {
+        // Saved profile: clear interface lock, then bring it up on the requested iface
+        execFile('sudo', ['nmcli', 'con', 'modify', savedProfile, 'connection.interface-name', ''], () => {
+          execFile('sudo', ['nmcli', 'con', 'up', savedProfile, 'ifname', iface], { timeout: 60000 }, (err, stdout, stderr) => {
+            if (err) {
+              const msg = (stderr || stdout || err.message || '').trim();
+              console.error(`nmcli con up error for ${ssid}:`, msg);
+              return callback({ error: msg || `Failed to connect to ${ssid}` });
             }
-            console.log(`WiFi connected to new: ${ssid}`);
+            console.log(`WiFi connected (saved): ${iface} -> ${ssid}`);
             callback({ success: true, message: `Connected to ${ssid}` });
           });
         });
+      } else {
+        doConnect();
       }
-    });
+    }); // end con show
+    }); // end rescan
   });
 
   socket.on('reconnectPrevious', (data, callback) => {
     const conName = data.connectionName;
+    const iface = data.iface || '';
     if (!conName) {
       return callback({ error: 'No previous connection name' });
     }
     const safeCon = conName.replace(/'/g, "'\\''");
-    exec(`sudo nmcli con up '${safeCon}'`, (err) => {
+    const safeIface = iface.replace(/'/g, "'\\''");
+    const ifaceArg = iface ? ` ifname "${safeIface}"` : '';
+    exec(`sudo nmcli con up '${safeCon}'${ifaceArg}`, (err) => {
       if (err) {
         console.error('Reconnect error:', err.message);
         return callback({ error: err.message });
       }
-      console.log(`WiFi reconnected to: ${conName}`);
+      console.log(`WiFi reconnected to: ${conName}${iface ? ' on ' + iface : ''}`);
       callback({ success: true, message: `Reconnected to ${conName}` });
     });
   });
@@ -789,6 +1317,93 @@ io.on('connection', (socket) => {
       if (err) return callback({ error: err.message + (stderr ? ' | ' + stderr.trim() : '') });
       try { callback({ data: JSON.parse(stdout) }); }
       catch (e) { callback({ data: stdout.trim() }); }
+    });
+  });
+
+  // ── iPhone pairing ──
+
+  const IPHONE_NAMES_FILE = path.join(__dirname, 'iphone-names.json');
+
+  function loadIphoneNames() {
+    try { return JSON.parse(fs.readFileSync(IPHONE_NAMES_FILE, 'utf8')); } catch (e) { return {}; }
+  }
+  function saveIphoneNames(names) {
+    try { fs.writeFileSync(IPHONE_NAMES_FILE, JSON.stringify(names, null, 2)); } catch (e) {}
+  }
+
+  socket.on('getIphones', (callback) => {
+    const nameCache = loadIphoneNames();
+    exec('idevicepair list', (err, pairedOut) => {
+      const paired = (pairedOut || '').trim().split('\n').map(s => s.trim()).filter(Boolean);
+      exec('idevice_id -l', (err2, connectedOut) => {
+        const connected = new Set((connectedOut || '').trim().split('\n').map(s => s.trim()).filter(Boolean));
+        let remaining = paired.length;
+        if (!remaining) return callback({ phones: [] });
+        const phones = [];
+        let cacheUpdated = false;
+        paired.forEach(udid => {
+          exec(`ideviceinfo -u ${udid} -k DeviceName`, { timeout: 5000 }, (e, nameOut) => {
+            const fetched = (nameOut || '').trim();
+            if (fetched) {
+              if (nameCache[udid] !== fetched) { nameCache[udid] = fetched; cacheUpdated = true; }
+            }
+            const name = nameCache[udid] || 'Unknown';
+            phones.push({ udid, name, connected: connected.has(udid) });
+            if (--remaining === 0) {
+              if (cacheUpdated) saveIphoneNames(nameCache);
+              connected.forEach(udid2 => {
+                if (!paired.includes(udid2)) {
+                  phones.push({ udid: udid2, name: 'Unpaired', connected: true, unpaired: true });
+                }
+              });
+              callback({ phones });
+            }
+          });
+        });
+      });
+    });
+  });
+
+  socket.on('pairIphone', (callback) => {
+    exec('idevicepair pair', { timeout: 30000 }, (err, stdout, stderr) => {
+      const out = (stdout || '').trim() || (stderr || '').trim();
+      if (err && !out.includes('SUCCESS')) return callback({ error: out || err.message });
+      callback({ ok: true, message: out });
+    });
+  });
+
+  const SEND_BUFFER_SCRIPT = '/usr/local/bin/pi-send-buffer.sh';
+
+  socket.on('getNginxStreamDest', (callback) => {
+    fs.readFile(SEND_BUFFER_SCRIPT, 'utf8', (err, data) => {
+      if (err) return callback({ error: err.message });
+      const m = data.match(/^STREAM_URL="(rtmp:\/\/[^"]+)"/m);
+      if (!m) return callback({ error: 'No STREAM_URL found in pi-send-buffer.sh' });
+      const fullUrl = m[1];
+      const lastSlash = fullUrl.lastIndexOf('/');
+      const baseUrl = fullUrl.substring(0, lastSlash);
+      const streamKey = fullUrl.substring(lastSlash + 1);
+      callback({ baseUrl, streamKey, fullUrl });
+    });
+  });
+
+  socket.on('setNginxStreamDest', ({ baseUrl, streamKey }, callback) => {
+    if (!baseUrl || !streamKey) return callback({ error: 'baseUrl and streamKey are required' });
+    if (!/^rtmp:\/\/[a-zA-Z0-9._\-/:]+$/.test(baseUrl)) return callback({ error: 'Invalid base URL' });
+    if (!/^[a-zA-Z0-9._\-]+$/.test(streamKey)) return callback({ error: 'Invalid stream key' });
+    const newUrl = `${baseUrl}/${streamKey}`;
+
+    fs.readFile(SEND_BUFFER_SCRIPT, 'utf8', (err, data) => {
+      if (err) return callback({ error: 'Failed to read script: ' + err.message });
+      if (!/^STREAM_URL="rtmp:\/\/[^"]+"/m.test(data)) return callback({ error: 'Could not locate STREAM_URL in script' });
+      const updated = data.replace(/^(STREAM_URL=")rtmp:\/\/[^"]+(")/m, `$1${newUrl}$2`);
+
+      const proc = exec(`sudo tee ${SEND_BUFFER_SCRIPT}`, (err2) => {
+        if (err2) return callback({ error: 'Failed to write script: ' + err2.message });
+        callback({ ok: true });
+      });
+      proc.stdin.write(updated);
+      proc.stdin.end();
     });
   });
 });
@@ -864,5 +1479,7 @@ server.listen(PORT, () => {
   console.log(`Display: http://localhost:${PORT}/display`);
   console.log(`Control: http://localhost:${PORT}/control`);
   console.log(`Network: http://localhost:${PORT}/network`);
+  console.log(`AP Channel: http://localhost:${PORT}/apchannel`);
+  console.log(`Bracket:    http://localhost:${PORT}/bracket`);
   console.log(`ATEM IP: ${ATEM_IP} | Graphics Input: ${GRAPHICS_INPUT} | Downstream Key: ${DOWNSTREAM_KEY}`);
 });

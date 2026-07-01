@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teams & Players</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a1a;
+            color: white;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+
+        .nav-links {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .nav-links a {
+            color: #888;
+            text-decoration: none;
+            font-size: 14px;
+            margin: 0 10px;
+        }
+
+        .nav-links a:hover { color: #fff; }
+
+        .teams-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 14px;
+        }
+
+        .team-card {
+            background: #2a2a2a;
+            border-radius: 10px;
+            padding: 16px 18px;
+        }
+
+        .team-name {
+            font-size: 16px;
+            font-weight: bold;
+            color: #fff;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #3a3a3a;
+            padding-bottom: 8px;
+        }
+
+        .player {
+            font-size: 14px;
+            color: #ccc;
+            padding: 3px 0;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Teams &amp; Players</h1>
+    <div class="nav-links">
+        <a href="/control">Control</a>
+        <a href="/bracket">Schedule</a>
+        <a href="/display" target="_blank">Display</a>
+        <a href="/network">Network</a>
+    </div>
+
+    <div class="teams-grid">
+        <div class="team-card">
+            <div class="team-name">A Swig and A Miss</div>
+            <div class="player">Will David</div>
+            <div class="player">Ya Chi Yang</div>
+            <div class="player">Chadwick Spence</div>
+            <div class="player">Marco</div>
+        </div>
+        <div class="team-card">
+            <div class="team-name">Beehive Baes</div>
+            <div class="player">Jimmy Araneda</div>
+            <div class="player">Carlos Garcia</div>
+            <div class="player">Josh Scott</div>
+            <div class="player">Ricky Hoang</div>
+        </div>
+        <div class="team-card">
+            <div class="team-name">Best Bet</div>
+            <div class="player">Nick Lembo</div>
+            <div class="player">Dana Fenster</div>
+            <div class="player">Owen Geary</div>
+            <div class="player">Jess Elliott</div>
+        </div>
+        <div class="team-card">
+            <div class="team-name">Copperhead</div>
+            <div class="player">Aaron Hand</div>
+            <div class="player">Arlyn Bement</div>
+            <div class="player">Gavin Thurston</div>
+            <div class="player">Sergio Pineda</div>
+        </div>
+        <div class="team-card">
+            <div class="team-name">Golden Geese</div>
+            <div class="player">Eryn Sacro</div>
+            <div class="player">Sam Lewando</div>
+            <div class="player">Gibson Greene</div>
+            <div class="player">Ben Syphus</div>
+        </div>
+        <div class="team-card">
+            <div class="team-name">Gulls</div>
+            <div class="player">Chris Hammersly</div>
+            <div class="player">Julian Aristeo</div>
+            <div class="player">Carol Camillieri</div>
+            <div class="player">B Lashua</div>
+        </div>
+        <div class="team-card">
+            <div class="team-name">Mothership</div>
+            <div class="player">Davey Kim</div>
+            <div class="player">Arnold Francisco</div>
+            <div class="player">Emily Croft</div>
+            <div class="player">Matthew Fox</div>
+        </div>
+        <div class="team-card">
+            <div class="team-name">Nemesis</div>
+            <div class="player">Jenny Spencer</div>
+            <div class="player">Yair Sikorski</div>
+            <div class="player">Daniel Ruano</div>
+            <div class="player">Enrique Morales</div>
+        </div>
+        <div class="team-card">
+            <div class="team-name">Silky Mitts</div>
+            <div class="player">Emmet Sheeham</div>
+            <div class="player">Andrew Pollis</div>
+            <div class="player">Noah Hake</div>
+            <div class="player">Tyrone Yanaga</div>
+        </div>
+        <div class="team-card">
+            <div class="team-name">Slither</div>
+            <div class="player">Bob Delgato</div>
+            <div class="player">David Frankhauser</div>
+            <div class="player">Patti Youn</div>
+            <div class="player">Tina Medley</div>
+        </div>
+        <div class="team-card">
+            <div class="team-name">Valley Boyz</div>
+            <div class="player">AJ Maldonado</div>
+            <div class="player">Mike Boyd</div>
+            <div class="player">Jacob Boyd</div>
+            <div class="player">Nate Perryman</div>
+        </div>
+        <div class="team-card">
+            <div class="team-name">Yoke</div>
+            <div class="player">Brett Arnold</div>
+            <div class="player">Chaney Courtney</div>
+            <div class="player">Vance Gaffar</div>
+            <div class="player">Joshua Klarmann</div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
