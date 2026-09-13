@@ -30,51 +30,19 @@
             color: #fff;
         }
 
-        .timer-inline {
-            display: flex;
-            align-items: center;
-            gap: 2px;
-            background: #2a2a2a;
-            border-radius: 6px;
-            padding: 2px 4px;
-        }
-
-        .timer-inline input[type=text] {
-            background: #2a2a2a;
-            border: none;
-            color: white;
-            font-size: 14px;
-            font-weight: bold;
-            width: 22px;
+        .nav-links {
             text-align: center;
-            padding: 0;
+            margin-bottom: 24px;
         }
 
-        .timer-inline input[type=text]:focus {
-            outline: 1px solid #00bcd4;
-        }
-
-        .timer-inline .timer-sep {
+        .nav-links a {
+            color: #888;
+            text-decoration: none;
             font-size: 14px;
-            font-weight: bold;
-            line-height: 1;
+            margin: 0 10px;
         }
 
-        .timer-inline-btn {
-            border: none;
-            border-radius: 3px;
-            color: white;
-            font-size: 9px;
-            font-weight: bold;
-            padding: 2px 4px;
-            cursor: pointer;
-            background: #00bcd4;
-            margin-left: 2px;
-        }
-
-        .timer-inline-btn:hover { filter: brightness(1.15); }
-        .timer-inline-btn.restart { background: #ff9800; }
-        .timer-inline-btn.stop { background: #f44336; }
+        .nav-links a:hover { color: #fff; }
 
         .teams-row {
             display: flex;
@@ -327,14 +295,6 @@
             background: #f57c00;
         }
 
-        .action-button.report {
-            background: #6a1b9a;
-        }
-
-        .action-button.report:hover {
-            background: #7b1fa2;
-        }
-
         .status {
             text-align: center;
             margin-top: 20px;
@@ -568,24 +528,15 @@
 <body>
     <div class="container">
         <h1>Scorebored</h1>
-        <div style="display:flex;justify-content:center;margin-bottom:16px;">
-            <div class="timer-inline">
-                <input type="text" id="timerHours" value="00" maxlength="2">
-                <span class="timer-sep">:</span>
-                <input type="text" id="timerMinutes" value="00" maxlength="2">
-                <span class="timer-sep">:</span>
-                <input type="text" id="timerSeconds" value="00" maxlength="2">
-                <button class="timer-inline-btn" onclick="timerStart()">Start</button>
-                <button class="timer-inline-btn restart" onclick="timerRestart()">Restart</button>
-                <button class="timer-inline-btn stop" onclick="timerStop()">Stop</button>
-            </div>
+        <div class="nav-links">
+            <a href="/control">Control</a>
+            <a href="/bracket">Schedule</a>
+            <a href="/display" target="_blank">Display</a>
+            <a href="/network">Network</a>
+            <a href="/teams">Teams</a>
+            <a href="/bracket-viewer" target="_blank">Bracket Viewer</a>
+            <a href="http://10.42.0.1:8000/" target="_blank">Companion</a>
         </div>
-        <div style="text-align:center;margin-bottom:16px;display:flex;gap:10px;justify-content:center;">
-            <a href="/network" style="background:#2196f3;color:white;text-decoration:none;padding:8px 20px;border-radius:8px;font-weight:bold;font-size:14px;">Network Dashboard</a>
-            <a href="/bracket" style="background:#6a1b9a;color:white;text-decoration:none;padding:8px 20px;border-radius:8px;font-weight:bold;font-size:14px;">Tournament Schedule</a>
-            <a href="http://10.42.0.1:8000/" target="_blank" style="background:#e65100;color:white;text-decoration:none;padding:8px 20px;border-radius:8px;font-weight:bold;font-size:14px;">Companion</a>
-        </div>
-
         <div class="teams-row">
             <div class="team-section">
                 <div class="team-header">
@@ -635,7 +586,6 @@
         <div class="action-buttons">
             <button class="action-button" onclick="swapSides()">Swap Sides</button>
             <button class="action-button reset" onclick="resetGame()">Reset Game</button>
-            <button class="action-button report" onclick="reportFinalScore()">Report Final Score</button>
         </div>
 
         <div class="action-buttons" style="margin-top:10px;">
@@ -991,17 +941,6 @@
             statusEl.className = 'status disconnected';
         });
         
-        socket.on('reportFinalScoreAck', (data) => {
-            const btn = document.querySelector('.action-button.report');
-            btn.textContent = data.ok ? 'Score Saved ✓' : 'No Match Found';
-            btn.classList.add(data.ok ? 'reset' : 'reset');
-            btn.style.background = data.ok ? '#2e7d32' : '#b71c1c';
-            setTimeout(() => {
-                btn.textContent = 'Report Final Score';
-                btn.style.background = '';
-            }, 2500);
-        });
-
         socket.on('gameUpdate', (gameState) => {
             console.log('📡 Received game update:', gameState);
             leftTeamInput.value = gameState.leftTeam;
@@ -1102,13 +1041,6 @@
             }
         }
 
-        function reportFinalScore() {
-            socket.emit('reportFinalScore', {
-                leftScore: parseInt(leftScoreEl.textContent, 10),
-                rightScore: parseInt(rightScoreEl.textContent, 10),
-            });
-        }
-
         function nextGame() {
             socket.emit('navigateMatchup', { direction: 1 });
         }
@@ -1119,61 +1051,6 @@
         
         // Video selector event listener
         videoSelector.addEventListener('change', updateCommercialButtons);
-
-        // Timer
-        let timerInterval = null;
-        let timerStartedAt = null;
-        let timerBaseMs = 0;
-
-        const timerHoursEl = document.getElementById('timerHours');
-        const timerMinutesEl = document.getElementById('timerMinutes');
-        const timerSecondsEl = document.getElementById('timerSeconds');
-
-        function timerUpdate() {
-            const elapsed = timerBaseMs + (Date.now() - timerStartedAt);
-            const totalSeconds = Math.floor(elapsed / 1000);
-            timerHoursEl.value = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
-            timerMinutesEl.value = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
-            timerSecondsEl.value = String(totalSeconds % 60).padStart(2, '0');
-        }
-
-        function timerReadMs() {
-            return (parseInt(timerHoursEl.value) || 0) * 3600000
-                 + (parseInt(timerMinutesEl.value) || 0) * 60000
-                 + (parseInt(timerSecondsEl.value) || 0) * 1000;
-        }
-
-        function timerStart() {
-            if (timerInterval) return;
-            timerBaseMs = timerReadMs();
-            timerStartedAt = Date.now();
-            timerInterval = setInterval(timerUpdate, 1000);
-        }
-
-        function timerStop() {
-            if (!timerInterval) return;
-            timerBaseMs += Date.now() - timerStartedAt;
-            clearInterval(timerInterval);
-            timerInterval = null;
-            timerStartedAt = null;
-        }
-
-        function timerRestart() {
-            clearInterval(timerInterval);
-            timerInterval = null;
-            timerBaseMs = 0;
-            timerHoursEl.value = '00';
-            timerMinutesEl.value = '00';
-            timerSecondsEl.value = '00';
-            timerStartedAt = Date.now();
-            timerInterval = setInterval(timerUpdate, 1000);
-        }
-
-        [timerHoursEl, timerMinutesEl, timerSecondsEl].forEach(el => {
-            el.addEventListener('change', () => {
-                if (!timerInterval) timerBaseMs = timerReadMs();
-            });
-        });
 
         // Initialize when page loads
         initializeColorPresets();

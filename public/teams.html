@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Teams & Players</title>
+    <title>Teams</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -66,19 +66,42 @@
             color: #ccc;
             padding: 3px 0;
         }
+
+        .seed-badge {
+            display: inline-block;
+            background: #3a3a3a;
+            color: #aaa;
+            font-size: 11px;
+            font-weight: bold;
+            border-radius: 4px;
+            padding: 2px 6px;
+            margin-right: 8px;
+        }
+
+        .source-note {
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+            margin: -14px 0 20px;
+        }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>Teams &amp; Players</h1>
+    <h1>Teams</h1>
     <div class="nav-links">
         <a href="/control">Control</a>
         <a href="/bracket">Schedule</a>
         <a href="/display" target="_blank">Display</a>
         <a href="/network">Network</a>
+        <a href="/teams">Teams</a>
+        <a href="/bracket-viewer" target="_blank">Bracket Viewer</a>
+            <a href="http://10.42.0.1:8000/" target="_blank">Companion</a>
     </div>
 
-    <div class="teams-grid">
+    <div class="source-note" id="source-note"></div>
+
+    <div class="teams-grid" id="teams-grid">
         <div class="team-card">
             <div class="team-name">A Swig and A Miss</div>
             <div class="player">Will David</div>
@@ -165,5 +188,39 @@
         </div>
     </div>
 </div>
+<script>
+function escHtml(str) {
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function loadChallongeTeams() {
+    try {
+        const statusRes = await fetch('/api/challonge/status');
+        if (!statusRes.ok) return;
+
+        const participantsRes = await fetch('/api/challonge/participants');
+        if (!participantsRes.ok) return; // Challonge disabled or no data yet — keep static fallback
+
+        const participants = await participantsRes.json();
+        if (!Array.isArray(participants) || participants.length === 0) return;
+
+        const grid = document.getElementById('teams-grid');
+        grid.innerHTML = participants
+            .slice()
+            .sort((a, b) => (a.seed ?? 999) - (b.seed ?? 999))
+            .map(p => `
+                <div class="team-card">
+                    <div class="team-name">${p.seed != null ? `<span class="seed-badge">#${p.seed}</span>` : ''}${escHtml(p.name)}</div>
+                </div>
+            `).join('');
+
+        document.getElementById('source-note').textContent = 'Live from Challonge';
+    } catch (e) {
+        // Network error, etc — keep static fallback list
+    }
+}
+
+loadChallongeTeams();
+</script>
 </body>
 </html>

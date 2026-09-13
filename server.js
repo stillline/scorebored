@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const https = require('https');
 const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
@@ -13,6 +14,12 @@ const io = socketIo(server);
 const PORT = process.env.PORT || 3000;
 const STATE_FILE = path.join(__dirname, 'gamestate.json');
 const BRACKET_FILE = path.join(__dirname, 'bracket.json');
+
+// Challonge integration
+const CHALLONGE_DIR = path.join(__dirname, 'challonge');
+const CHALLONGE_SCRIPT = path.join(CHALLONGE_DIR, 'challonge_sync.py');
+const CHALLONGE_STATE_DIR = path.join(CHALLONGE_DIR, 'state');
+const CHALLONGE_CONFIG_FILE = path.join(__dirname, 'challonge-config.json');
 
 // ATEM Configuration
 const ATEM_IP = process.env.ATEM_IP || '10.42.0.100'; // Default ATEM IP
@@ -367,6 +374,131 @@ function freqToChannel(ghz) {
   return null;
 }
 
+// ── Challonge Integration ──
+// Standalone, toggleable, read-only. Never writes anything back to Challonge.
+
+let challongeProc = null;
+let challongeConfig = { apiKey: '', tourney: '', enabled: false };
+
+function loadChallongeConfig() {
+  try {
+    if (fs.existsSync(CHALLONGE_CONFIG_FILE)) {
+      const saved = JSON.parse(fs.readFileSync(CHALLONGE_CONFIG_FILE, 'utf8'));
+      challongeConfig = { ...challongeConfig, ...saved };
+    }
+  } catch (error) {
+    console.error('Error loading Challonge config:', error);
+  }
+}
+
+function saveChallongeConfig() {
+  try {
+    fs.writeFileSync(CHALLONGE_CONFIG_FILE, JSON.stringify(challongeConfig, null, 2));
+  } catch (error) {
+    console.error('Error saving Challonge config:', error);
+  }
+}
+
+function readChallongeStateFile(filename) {
+  try {
+    const filePath = path.join(CHALLONGE_STATE_DIR, filename);
+    if (!fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    console.error(`Error reading challonge/state/${filename}:`, error);
+    return null;
+  }
+}
+
+function startChallongeSync() {
+  if (challongeProc) return;
+  if (!challongeConfig.apiKey || !challongeConfig.tourney) {
+    console.log('Challonge: cannot start, missing apiKey or tourney');
+    return;
+  }
+
+  console.log(`Challonge: starting sync for tournament "${challongeConfig.tourney}"`);
+  challongeProc = spawn('python3', [CHALLONGE_SCRIPT], {
+    cwd: CHALLONGE_DIR,
+    env: {
+      ...process.env,
+      CHALLONGE_API_KEY: challongeConfig.apiKey,
+      CHALLONGE_TOURNEY: challongeConfig.tourney,
+    },
+  });
+
+  challongeProc.stdout.on('data', (chunk) => {
+    console.log(`[challonge] ${chunk.toString().trim()}`);
+  });
+  challongeProc.stderr.on('data', (chunk) => {
+    console.error(`[challonge] ${chunk.toString().trim()}`);
+  });
+  challongeProc.on('close', (code) => {
+    console.log(`Challonge sync process exited with code ${code}`);
+    challongeProc = null;
+  });
+  challongeProc.on('error', (err) => {
+    console.error('Challonge sync spawn error:', err.message);
+    challongeProc = null;
+  });
+}
+
+function stopChallongeSync() {
+  if (!challongeProc) return;
+  console.log('Challonge: stopping sync');
+  challongeProc.kill();
+  challongeProc = null;
+}
+
+function pollChallongeNow() {
+  if (challongeProc) challongeProc.kill('SIGUSR1');
+}
+
+// One-off read-only lookup of all tournaments visible to an API key, so the
+// bracket page UI can offer a picker instead of requiring a hand-typed slug.
+function listChallongeTournaments(apiKey) {
+  return new Promise((resolve, reject) => {
+    const req = https.request('https://api.challonge.com/v2.1/tournaments.json', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/vnd.api+json',
+        'Accept': 'application/json',
+        'Authorization-Type': 'v1',
+        'Authorization': apiKey,
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) challonge-scoreboard-script/1.0',
+      },
+      timeout: 10000,
+    }, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          return reject(new Error(`Challonge API returned HTTP ${res.statusCode}`));
+        }
+        try {
+          const parsed = JSON.parse(body);
+          const tournaments = parsed.data.map(t => ({
+            id: t.id,
+            slug: t.attributes.url,
+            name: t.attributes.name,
+            state: t.attributes.state,
+            tournament_type: t.attributes.tournament_type,
+          }));
+          resolve(tournaments);
+        } catch (e) {
+          reject(new Error('Failed to parse Challonge response'));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('Challonge API request timed out')));
+    req.end();
+  });
+}
+
+loadChallongeConfig();
+if (challongeConfig.enabled) startChallongeSync();
+
 app.use(express.static('public'));
 
 app.get('/', (req, res) => {
@@ -397,6 +529,30 @@ app.get('/teams', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'teams.html'));
 });
 
+app.get('/bracket-viewer', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'bracket-viewer.html'));
+});
+
+app.get('/api/challonge/config', (req, res) => {
+  res.json({ apiKey: challongeConfig.apiKey ? '••••••••' : '', tourney: challongeConfig.tourney, enabled: challongeConfig.enabled });
+});
+
+app.get('/api/challonge/status', (req, res) => {
+  res.json(readChallongeStateFile('status.json') || { state: challongeConfig.enabled ? 'starting' : 'off', last_poll_at: null, last_error: null });
+});
+
+app.get('/api/challonge/participants', (req, res) => {
+  const data = readChallongeStateFile('participants.json');
+  if (!data) return res.status(404).json({ error: 'No Challonge participant data yet' });
+  res.json(data);
+});
+
+app.get('/api/challonge/bracket', (req, res) => {
+  const data = readChallongeStateFile('bracket.json');
+  if (!data) return res.status(404).json({ error: 'No Challonge bracket data yet' });
+  res.json(data);
+});
+
 app.get('/api/bracket', (req, res) => {
   try {
     if (fs.existsSync(BRACKET_FILE)) {
@@ -413,25 +569,6 @@ app.get('/api/bracket', (req, res) => {
 app.post('/api/bracket', express.json(), (req, res) => {
   try {
     fs.writeFileSync(BRACKET_FILE, JSON.stringify(req.body, null, 2));
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.post('/api/bracket/score', express.json(), (req, res) => {
-  try {
-    const { idx, ls, rs, final: isFinal } = req.body;
-    if (!fs.existsSync(BRACKET_FILE)) return res.status(404).json({ error: 'No bracket saved' });
-    const bracket = JSON.parse(fs.readFileSync(BRACKET_FILE, 'utf8'));
-    const match = bracket.matchups[idx];
-    if (!match || match.group !== undefined) return res.status(400).json({ error: 'Invalid index' });
-    match.ls = ls;
-    match.rs = rs;
-    match.final = isFinal === true;
-    fs.writeFileSync(BRACKET_FILE, JSON.stringify(bracket, null, 2));
-    io.emit('bracketUpdated');
-    console.log(`Score updated [${idx}]: ${match.left} ${ls} - ${rs} ${match.right} (final: ${match.final})`);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -475,62 +612,13 @@ app.post('/api/score/:side/:change', (req, res) => {
 
 // HTTP API for bracket navigation (used by keyboard controller)
 app.post('/api/prev-game', (req, res) => {
-  try {
-    if (!fs.existsSync(BRACKET_FILE)) return res.status(404).json({ error: 'No bracket saved' });
-    const bracket = JSON.parse(fs.readFileSync(BRACKET_FILE, 'utf8'));
-    const currentIdx = gameState.loadedMatchupIndex ?? -1;
-    const nextIdx = findNextMatchupIndex(bracket.matchups, currentIdx, -1);
-    if (nextIdx !== null) {
-      loadMatchupByIndex(bracket.matchups, nextIdx, true);
-      res.json({ ok: true, index: nextIdx });
-    } else {
-      res.json({ ok: false, error: 'No previous matchup' });
-    }
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  const result = navigateGame(-1);
+  res.json(result);
 });
 
 app.post('/api/next-game', (req, res) => {
-  try {
-    if (!fs.existsSync(BRACKET_FILE)) return res.status(404).json({ error: 'No bracket saved' });
-    const bracket = JSON.parse(fs.readFileSync(BRACKET_FILE, 'utf8'));
-    const currentIdx = gameState.loadedMatchupIndex ?? -1;
-    const nextIdx = findNextMatchupIndex(bracket.matchups, currentIdx, 1);
-    if (nextIdx !== null) {
-      loadMatchupByIndex(bracket.matchups, nextIdx, true);
-      res.json({ ok: true, index: nextIdx });
-    } else {
-      res.json({ ok: false, error: 'No next matchup' });
-    }
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.post('/api/report-final-score', (req, res) => {
-  try {
-    if (gameState.loadedMatchupIndex == null) return res.status(400).json({ ok: false, error: 'No matchup loaded' });
-    if (!fs.existsSync(BRACKET_FILE)) return res.status(404).json({ error: 'No bracket saved' });
-    const bracket = JSON.parse(fs.readFileSync(BRACKET_FILE, 'utf8'));
-    const match = bracket.matchups[gameState.loadedMatchupIndex];
-    if (!match || match.group !== undefined) return res.status(400).json({ ok: false, error: 'Invalid matchup index' });
-    match.ls = gameState.leftScore;
-    match.rs = gameState.rightScore;
-    match.final = true;
-    fs.writeFileSync(BRACKET_FILE, JSON.stringify(bracket, null, 2));
-    io.emit('bracketUpdated');
-    console.log(`Final score reported via HTTP [${gameState.loadedMatchupIndex}]: ${match.left} ${match.ls} - ${match.rs} ${match.right}`);
-    const nextIdx = findNextMatchupIndex(bracket.matchups, gameState.loadedMatchupIndex, 1);
-    if (nextIdx !== null) {
-      loadMatchupByIndex(bracket.matchups, nextIdx);
-      res.json({ ok: true, advanced: true, index: nextIdx });
-    } else {
-      res.json({ ok: true, advanced: false });
-    }
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  const result = navigateGame(1);
+  res.json(result);
 });
 
 // HTTP API for swap sides (used by keyboard controller)
@@ -581,7 +669,12 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 function findNextMatchupIndex(matchups, currentIdx, direction) {
-  let i = currentIdx + direction;
+  // Clamp a stale currentIdx (e.g. left over from a schedule that has
+  // since been overwritten with fewer entries, such as after a Challonge
+  // re-sync) back into range before walking, so navigation still finds
+  // the first/last matchup instead of silently finding nothing.
+  const clampedIdx = Math.max(-1, Math.min(currentIdx, matchups.length));
+  let i = clampedIdx + direction;
   while (i >= 0 && i < matchups.length) {
     if (!matchups[i].group) return i;
     i += direction;
@@ -589,7 +682,7 @@ function findNextMatchupIndex(matchups, currentIdx, direction) {
   return null;
 }
 
-function loadMatchupByIndex(matchups, idx, restoreScores = false) {
+function loadMatchupByIndex(matchups, idx) {
   const m = matchups[idx];
   if (!m || m.group) return;
   const lstc = m.lstc || defaultGameState.leftScoreTextColor;
@@ -601,8 +694,6 @@ function loadMatchupByIndex(matchups, idx, restoreScores = false) {
     gameState.rightColor = m.lc;
     gameState.leftScoreTextColor  = rstc;
     gameState.rightScoreTextColor = lstc;
-    gameState.leftScore  = (restoreScores && m.rs != null) ? m.rs : 0;
-    gameState.rightScore = (restoreScores && m.ls != null) ? m.ls : 0;
   } else {
     gameState.leftTeam  = m.left;
     gameState.rightTeam = m.right;
@@ -610,12 +701,29 @@ function loadMatchupByIndex(matchups, idx, restoreScores = false) {
     gameState.rightColor = m.rc;
     gameState.leftScoreTextColor  = lstc;
     gameState.rightScoreTextColor = rstc;
-    gameState.leftScore  = (restoreScores && m.ls != null) ? m.ls : 0;
-    gameState.rightScore = (restoreScores && m.rs != null) ? m.rs : 0;
   }
+  gameState.leftScore = 0;
+  gameState.rightScore = 0;
   gameState.loadedMatchupIndex = idx;
   saveGameState();
   io.emit('gameUpdate', gameState);
+}
+
+// Next/Prev Game always walks bracket.json — whether its matchups were
+// typed in manually or last synced in by challonge_sync.py (which
+// overwrites bracket.json directly while Challonge sync is enabled).
+// direction: 1 = next, -1 = previous
+function navigateGame(direction) {
+  if (!fs.existsSync(BRACKET_FILE)) return { ok: false, error: 'No bracket saved' };
+  const bracket = JSON.parse(fs.readFileSync(BRACKET_FILE, 'utf8'));
+  const currentIdx = gameState.loadedMatchupIndex ?? -1;
+  const nextIdx = findNextMatchupIndex(bracket.matchups, currentIdx, direction);
+  if (nextIdx === null) {
+    if (direction > 0 && challongeConfig.enabled) pollChallongeNow();
+    return { ok: false, error: direction > 0 ? 'No next matchup' : 'No previous matchup' };
+  }
+  loadMatchupByIndex(bracket.matchups, nextIdx);
+  return { ok: true, index: nextIdx };
 }
 
 io.on('connection', (socket) => {
@@ -701,58 +809,8 @@ io.on('connection', (socket) => {
     io.emit('gameUpdate', gameState);
   });
 
-  socket.on('reportFinalScore', (data) => {
-    try {
-      if (gameState.loadedMatchupIndex == null) {
-        console.log('reportFinalScore: no matchup currently loaded');
-        socket.emit('reportFinalScoreAck', { ok: false });
-        return;
-      }
-      if (!fs.existsSync(BRACKET_FILE)) {
-        console.log('reportFinalScore: bracket.json not saved yet');
-        socket.emit('reportFinalScoreAck', { ok: false });
-        return;
-      }
-      const bracket = JSON.parse(fs.readFileSync(BRACKET_FILE, 'utf8'));
-      const match = bracket.matchups[gameState.loadedMatchupIndex];
-      if (!match || match.group !== undefined) {
-        console.log('reportFinalScore: matchup index invalid');
-        socket.emit('reportFinalScoreAck', { ok: false });
-        return;
-      }
-      match.ls = data.leftScore;
-      match.rs = data.rightScore;
-      match.final = true;
-      fs.writeFileSync(BRACKET_FILE, JSON.stringify(bracket, null, 2));
-      io.emit('bracketUpdated');
-      console.log(`Final score reported [${gameState.loadedMatchupIndex}]: ${match.left} ${data.leftScore} - ${data.rightScore} ${match.right}`);
-
-      // Auto-advance to next matchup
-      const nextIdx = findNextMatchupIndex(bracket.matchups, gameState.loadedMatchupIndex, 1);
-      if (nextIdx !== null) {
-        loadMatchupByIndex(bracket.matchups, nextIdx);
-        socket.emit('reportFinalScoreAck', { ok: true, advanced: true });
-      } else {
-        socket.emit('reportFinalScoreAck', { ok: true, advanced: false });
-      }
-    } catch (e) {
-      console.error('reportFinalScore error:', e);
-      socket.emit('reportFinalScoreAck', { ok: false });
-    }
-  });
-
   socket.on('navigateMatchup', (data) => {
-    try {
-      if (!fs.existsSync(BRACKET_FILE)) return;
-      const bracket = JSON.parse(fs.readFileSync(BRACKET_FILE, 'utf8'));
-      const currentIdx = gameState.loadedMatchupIndex ?? -1;
-      const nextIdx = findNextMatchupIndex(bracket.matchups, currentIdx, data.direction);
-      if (nextIdx !== null) {
-        loadMatchupByIndex(bracket.matchups, nextIdx, true);
-      }
-    } catch (e) {
-      console.error('navigateMatchup error:', e);
-    }
+    navigateGame(data.direction);
   });
 
   socket.on('loadMatchup', (data) => {
@@ -760,8 +818,8 @@ io.on('connection', (socket) => {
     gameState.rightTeam = data.rightTeam;
     gameState.leftColor  = data.leftColor;
     gameState.rightColor = data.rightColor;
-    gameState.leftScore  = data.leftScore ?? 0;
-    gameState.rightScore = data.rightScore ?? 0;
+    gameState.leftScore  = 0;
+    gameState.rightScore = 0;
     gameState.loadedMatchupIndex = data.matchupIndex ?? null;
     saveGameState();
     io.emit('gameUpdate', gameState);
@@ -1055,6 +1113,51 @@ io.on('connection', (socket) => {
       }
     } catch (error) {
       console.error('Failed to start/stop bars:', error);
+    }
+  });
+
+  // ── Challonge Integration ──
+
+  socket.on('getChallongeConfig', (callback) => {
+    callback({
+      apiKey: challongeConfig.apiKey ? '••••••••' : '',
+      tourney: challongeConfig.tourney,
+      enabled: challongeConfig.enabled,
+    });
+  });
+
+  socket.on('setChallongeConfig', (data, callback) => {
+    const { apiKey, tourney } = data;
+    if (typeof apiKey === 'string' && apiKey && apiKey !== '••••••••') challongeConfig.apiKey = apiKey.trim();
+    if (typeof tourney === 'string') challongeConfig.tourney = tourney.trim();
+    saveChallongeConfig();
+    if (challongeConfig.enabled) {
+      // Restart with new config
+      stopChallongeSync();
+      startChallongeSync();
+    }
+    callback({ ok: true });
+  });
+
+  socket.on('toggleChallonge', (enabled, callback) => {
+    challongeConfig.enabled = !!enabled;
+    saveChallongeConfig();
+    if (challongeConfig.enabled) {
+      startChallongeSync();
+    } else {
+      stopChallongeSync();
+    }
+    if (callback) callback({ ok: true, enabled: challongeConfig.enabled });
+  });
+
+  socket.on('listChallongeTournaments', async (data, callback) => {
+    const apiKey = (data && data.apiKey && data.apiKey !== '••••••••') ? data.apiKey.trim() : challongeConfig.apiKey;
+    if (!apiKey) return callback({ error: 'No API key provided' });
+    try {
+      const tournaments = await listChallongeTournaments(apiKey);
+      callback({ tournaments });
+    } catch (e) {
+      callback({ error: e.message });
     }
   });
 
@@ -1459,13 +1562,15 @@ function startSpeedifyStats() {
 
 startSpeedifyStats();
 
-// Clean up speedify subprocess on exit
+// Clean up speedify/challonge subprocesses on exit
 process.on('SIGINT', () => {
   if (speedifyProc) speedifyProc.kill();
+  if (challongeProc) challongeProc.kill();
   process.exit();
 });
 process.on('SIGTERM', () => {
   if (speedifyProc) speedifyProc.kill();
+  if (challongeProc) challongeProc.kill();
   process.exit();
 });
 

@@ -6,3 +6,5 @@ gamestate.json
 move-cursor.py
 *.tmp.*
 public/videos/
+challonge-config.json
+challonge/state/

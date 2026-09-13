@@ -72,24 +72,6 @@
             outline: 2px dashed #555;
         }
 
-        .matchup-item.completed {
-            background: #1e1e1e;
-            opacity: 0.6;
-        }
-
-        .matchup-item.completed .team-name-input,
-        .matchup-item.completed .score-input {
-            color: #777;
-            border-color: #333;
-            background: #2a2a2a;
-        }
-
-        .matchup-item.completed .match-num,
-        .matchup-item.completed .match-time,
-        .matchup-item.completed .vs-label {
-            color: #444;
-        }
-
         .matchup-item.dragging {
             opacity: 0.4;
         }
@@ -208,37 +190,6 @@
 
         .delete-btn:hover { color: #f44336; }
 
-        .update-btn {
-            background: none;
-            border: 1px solid #555;
-            color: #aaa;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: bold;
-            flex-shrink: 0;
-            border-radius: 5px;
-            padding: 4px 7px;
-            line-height: 1;
-            transition: color 0.15s, border-color 0.15s;
-        }
-
-        .update-btn:hover { color: #fff; border-color: #aaa; }
-
-        .unplay-btn {
-            background: none;
-            border: 1px solid #444;
-            color: #555;
-            cursor: pointer;
-            font-size: 12px;
-            flex-shrink: 0;
-            border-radius: 5px;
-            padding: 4px 7px;
-            line-height: 1;
-            transition: color 0.15s, border-color 0.15s;
-        }
-
-        .unplay-btn:hover { color: #ff9800; border-color: #ff9800; }
-
         .actions-bar {
             display: flex;
             gap: 10px;
@@ -287,34 +238,185 @@
         .save-status.ok { color: #4caf50; }
         .save-status.err { color: #f44336; }
 
-        .final-score {
+        .challonge-panel {
+            background: #2a2a2a;
+            border-radius: 10px;
+            padding: 16px 18px;
+            margin-bottom: 20px;
+        }
+
+        .challonge-panel-header {
             display: flex;
             align-items: center;
-            gap: 4px;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .challonge-panel-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .challonge-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .challonge-toggle input {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .challonge-toggle-slider {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 22px;
+            background: #444;
+            border-radius: 11px;
+            flex-shrink: 0;
+            transition: background 0.15s;
+        }
+
+        .challonge-toggle-slider::before {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 18px;
+            height: 18px;
+            background: #ccc;
+            border-radius: 50%;
+            transition: transform 0.15s, background 0.15s;
+        }
+
+        .challonge-toggle input:checked + .challonge-toggle-slider {
+            background: #2e7d32;
+        }
+
+        .challonge-toggle input:checked + .challonge-toggle-slider::before {
+            transform: translateX(18px);
+            background: #fff;
+        }
+
+        .challonge-toggle input:focus-visible + .challonge-toggle-slider {
+            outline: 2px solid #888;
+            outline-offset: 2px;
+        }
+
+        .challonge-row {
+            margin-bottom: 12px;
+        }
+
+        .challonge-row:last-of-type {
+            margin-bottom: 0;
+        }
+
+        .challonge-row-label {
+            display: block;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #888;
+            margin-bottom: 5px;
+        }
+
+        .challonge-row-inline {
+            display: flex;
+            gap: 8px;
+        }
+
+        .challonge-fields input[type="text"],
+        .challonge-fields input[type="password"],
+        .challonge-fields select {
+            background: #3a3a3a;
+            border: 1px solid #444;
+            border-radius: 6px;
+            color: white;
+            padding: 8px 10px;
+            font-size: 13px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .challonge-fields select {
+            text-overflow: ellipsis;
+        }
+
+        .challonge-fields input:focus, .challonge-fields select:focus { outline: none; border-color: #888; }
+
+        .challonge-save-btn, .challonge-list-btn {
+            background: #1565c0;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 16px;
+            font-size: 13px;
+            cursor: pointer;
+            white-space: nowrap;
             flex-shrink: 0;
         }
 
-        .score-input {
-            width: 36px;
-            background: #3a3a3a;
+        .challonge-list-btn {
+            background: #333;
+            border: 1px solid #555;
+        }
+
+        .challonge-save-btn:hover { background: #1976d2; }
+        .challonge-list-btn:hover { background: #3a3a3a; border-color: #888; }
+
+        .challonge-tourney-list {
+            display: none;
+            background: #1e1e1e;
             border: 1px solid #444;
-            border-radius: 5px;
-            color: white;
-            padding: 5px 4px;
-            font-size: 14px;
-            font-weight: bold;
-            text-align: center;
-        }
-
-        .score-input:focus {
-            outline: none;
-            border-color: #888;
-        }
-
-        .score-dash {
+            border-radius: 6px;
+            padding: 8px 10px;
+            margin-top: 8px;
             font-size: 12px;
-            color: #555;
         }
+
+        .challonge-tourney-list.visible { display: block; }
+
+        .challonge-tourney-list-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 4px 0;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .challonge-tourney-list-row:last-child { border-bottom: none; }
+
+        .challonge-tourney-list-name {
+            color: #ccc;
+        }
+
+        .challonge-tourney-list-meta {
+            color: #666;
+            font-size: 11px;
+        }
+
+        .challonge-tourney-list-slug {
+            color: #64b5f6;
+            font-family: monospace;
+            user-select: all;
+            flex-shrink: 0;
+        }
+
+        .challonge-status {
+            font-size: 12px;
+            color: #888;
+            margin-top: 12px;
+        }
+
+        .challonge-status.idle { color: #4caf50; }
+        .challonge-status.error { color: #f44336; }
     </style>
 </head>
 <body>
@@ -322,9 +424,41 @@
     <h1>Tournament Schedule</h1>
     <div class="nav-links">
         <a href="/control">Control</a>
+        <a href="/bracket">Schedule</a>
         <a href="/display" target="_blank">Display</a>
         <a href="/network">Network</a>
-        <a href="/teams">Teams &amp; Players</a>
+        <a href="/teams">Teams</a>
+        <a href="/bracket-viewer" target="_blank">Bracket Viewer</a>
+            <a href="http://10.42.0.1:8000/" target="_blank">Companion</a>
+    </div>
+
+    <div class="challonge-panel">
+        <div class="challonge-panel-header">
+            <span class="challonge-panel-title">Challonge Sync</span>
+            <label class="challonge-toggle">
+                <input type="checkbox" id="challonge-toggle">
+                <span class="challonge-toggle-slider"></span>
+                <span id="challonge-toggle-label">Disabled</span>
+            </label>
+        </div>
+        <div class="challonge-fields">
+            <div class="challonge-row">
+                <label class="challonge-row-label" for="challonge-api-key">API key</label>
+                <div class="challonge-row-inline">
+                    <input type="password" id="challonge-api-key" placeholder="API key">
+                    <button class="challonge-list-btn" id="challonge-list-btn">List Tournaments</button>
+                </div>
+                <div class="challonge-tourney-list" id="challonge-tourney-list"></div>
+            </div>
+            <div class="challonge-row">
+                <label class="challonge-row-label" for="challonge-tourney">Tournament slug</label>
+                <input type="text" id="challonge-tourney" placeholder="Tournament slug or id">
+            </div>
+            <div class="challonge-row">
+                <button class="challonge-save-btn" id="challonge-save-btn">Save</button>
+            </div>
+        </div>
+        <div class="challonge-status" id="challonge-status"></div>
     </div>
 
     <div id="matchup-list-container"></div>
@@ -387,19 +521,45 @@ const DEFAULT_MATCHUPS = [
 ];
 
 // ── Fetch saved schedule or use defaults ──
+let isReadOnly = false;
+
 async function loadSchedule() {
     try {
         const res = await fetch('/api/bracket');
         if (res.ok) {
             const data = await res.json();
             matchups = data.matchups || DEFAULT_MATCHUPS;
+            isReadOnly = data.source === 'challonge';
         } else {
             matchups = DEFAULT_MATCHUPS;
+            isReadOnly = false;
         }
     } catch (e) {
         matchups = DEFAULT_MATCHUPS;
+        isReadOnly = false;
     }
     render();
+    renderReadOnlyNotice();
+}
+
+function renderReadOnlyNotice() {
+    const actionsBar = document.querySelector('.actions-bar');
+    let notice = document.getElementById('challonge-readonly-notice');
+    if (isReadOnly) {
+        actionsBar.style.display = 'none';
+        if (!notice) {
+            notice = document.createElement('div');
+            notice.id = 'challonge-readonly-notice';
+            notice.className = 'challonge-status';
+            notice.style.textAlign = 'center';
+            notice.style.marginTop = '16px';
+            notice.textContent = 'Schedule is synced live from Challonge — editing is disabled while sync is enabled.';
+            document.querySelector('.container').appendChild(notice);
+        }
+    } else {
+        actionsBar.style.display = '';
+        if (notice) notice.remove();
+    }
 }
 
 // ── Render ──
@@ -421,147 +581,96 @@ function render() {
         }
 
         const item = document.createElement('div');
-        const isCompleted = m.final === true;
-        item.className = 'matchup-item' + (isCompleted ? ' completed' : '');
-        item.draggable = true;
+        item.className = 'matchup-item';
+        item.draggable = !isReadOnly;
         item.dataset.idx = idx;
 
+        const colorSwatch = (color, side) => isReadOnly
+            ? `<span class="team-color-swatch" style="background:${color}"></span>`
+            : `<button class="team-color-swatch" style="background:${color}" title="Team color">
+                   <input type="color" value="${color}" data-idx="${idx}" data-side="${side}">
+               </button>`;
+        const nameField = (name, field, placeholder) => isReadOnly
+            ? `<span class="team-name-input" style="display:flex;align-items:center;">${escHtml(name)}</span>`
+            : `<input class="team-name-input" type="text" value="${escHtml(name)}" data-idx="${idx}" data-field="${field}" placeholder="${placeholder}">`;
+
         item.innerHTML = `
-            <span class="drag-handle" title="Drag to reorder">⠿</span>
+            <span class="drag-handle" title="Drag to reorder" style="${isReadOnly ? 'visibility:hidden' : ''}">⠿</span>
             <span class="match-num">#${m.num || '—'}</span>
             <span class="match-time">${m.time || ''}</span>
             <div class="team-block">
-                <button class="team-color-swatch" style="background:${m.lc}" title="Left team color">
-                    <input type="color" value="${m.lc}" data-idx="${idx}" data-side="lc">
-                </button>
-                <input class="team-name-input" type="text" value="${escHtml(m.left)}" data-idx="${idx}" data-field="left" placeholder="Left team">
+                ${colorSwatch(m.lc, 'lc')}
+                ${nameField(m.left, 'left', 'Left team')}
             </div>
             <span class="vs-label">VS</span>
             <div class="team-block">
-                <button class="team-color-swatch" style="background:${m.rc}" title="Right team color">
-                    <input type="color" value="${m.rc}" data-idx="${idx}" data-side="rc">
-                </button>
-                <input class="team-name-input" type="text" value="${escHtml(m.right)}" data-idx="${idx}" data-field="right" placeholder="Right team">
+                ${colorSwatch(m.rc, 'rc')}
+                ${nameField(m.right, 'right', 'Right team')}
             </div>
-            <div class="final-score">
-                <input class="score-input" type="number" min="0" value="${m.ls ?? ''}" data-idx="${idx}" data-field="ls" placeholder="—">
-                <span class="score-dash">-</span>
-                <input class="score-input" type="number" min="0" value="${m.rs ?? ''}" data-idx="${idx}" data-field="rs" placeholder="—">
-            </div>
-            <button class="unplay-btn" data-idx="${idx}" title="Reset to unplayed" style="${isCompleted ? '' : 'visibility:hidden'}">↺</button>
-            <button class="update-btn" data-idx="${idx}" title="Save score without loading">Save</button>
             <button class="load-btn${currentlyLoaded === idx ? ' loaded' : ''}" data-idx="${idx}">
                 ${currentlyLoaded === idx ? 'Now Playing' : 'Load'}
             </button>
-            <button class="delete-btn" data-idx="${idx}" title="Delete">✕</button>
+            <button class="delete-btn" data-idx="${idx}" title="Delete" style="${isReadOnly ? 'visibility:hidden' : ''}">✕</button>
         `;
 
-        // Color swatch live preview
-        item.querySelectorAll('input[type="color"]').forEach(picker => {
-            picker.addEventListener('input', e => {
-                const i = parseInt(e.target.dataset.idx);
-                const side = e.target.dataset.side;
-                matchups[i][side] = e.target.value;
-                e.target.closest('.team-color-swatch').style.background = e.target.value;
-            });
-        });
-
-        // Team name edits
-        item.querySelectorAll('.team-name-input').forEach(input => {
-            input.addEventListener('input', e => {
-                const i = parseInt(e.target.dataset.idx);
-                const field = e.target.dataset.field;
-                matchups[i][field] = e.target.value;
-            });
-        });
-
-        // Final score edits
-        item.querySelectorAll('.score-input').forEach(input => {
-            input.addEventListener('input', e => {
-                const i = parseInt(e.target.dataset.idx);
-                const field = e.target.dataset.field;
-                const val = e.target.value === '' ? null : parseInt(e.target.value);
-                matchups[i][field] = isNaN(val) ? null : val;
-            });
-        });
-
-        // Time edit — inline on the span (double-click to edit)
-        const timeSpan = item.querySelector('.match-time');
-        timeSpan.style.cursor = 'pointer';
-        timeSpan.title = 'Click to edit time';
-        timeSpan.addEventListener('click', () => {
-            const inp = document.createElement('input');
-            inp.type = 'text';
-            inp.value = matchups[idx].time || '';
-            inp.style.cssText = 'width:52px;background:#3a3a3a;border:1px solid #666;border-radius:4px;color:white;padding:2px 4px;font-size:12px;';
-            timeSpan.replaceWith(inp);
-            inp.focus();
-            inp.select();
-            const commit = () => {
-                matchups[idx].time = inp.value;
-                inp.replaceWith(timeSpan);
-                timeSpan.textContent = inp.value;
-            };
-            inp.addEventListener('blur', commit);
-            inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
-        });
-
-        // Update score button
-        item.querySelector('.update-btn').addEventListener('click', async (e) => {
-            const m = matchups[idx];
-            const btn = e.currentTarget;
-            try {
-                const res = await fetch('/api/bracket/score', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ idx, ls: m.ls ?? null, rs: m.rs ?? null, final: true }),
+        if (!isReadOnly) {
+            // Color swatch live preview
+            item.querySelectorAll('input[type="color"]').forEach(picker => {
+                picker.addEventListener('input', e => {
+                    const i = parseInt(e.target.dataset.idx);
+                    const side = e.target.dataset.side;
+                    matchups[i][side] = e.target.value;
+                    e.target.closest('.team-color-swatch').style.background = e.target.value;
                 });
-                if (res.ok) {
-                    btn.textContent = '✓';
-                    btn.style.color = '#4caf50';
-                    item.classList.toggle('completed', true);
-                    item.querySelector('.unplay-btn').style.visibility = '';
-                } else {
-                    btn.textContent = '✗';
-                    btn.style.color = '#f44336';
-                }
-            } catch {
-                btn.textContent = '✗';
-                btn.style.color = '#f44336';
-            }
-            setTimeout(() => { btn.textContent = 'Save'; btn.style.color = ''; }, 1500);
-        });
-
-        // Unplay button
-        item.querySelector('.unplay-btn').addEventListener('click', async () => {
-            matchups[idx].final = false;
-            const res = await fetch('/api/bracket/score', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ idx, ls: matchups[idx].ls, rs: matchups[idx].rs, final: false }),
             });
-            if (res.ok) {
-                item.classList.remove('completed');
-                item.querySelector('.unplay-btn').style.visibility = 'hidden';
-            }
-        });
 
-        // Load button
+            // Team name edits
+            item.querySelectorAll('.team-name-input').forEach(input => {
+                input.addEventListener('input', e => {
+                    const i = parseInt(e.target.dataset.idx);
+                    const field = e.target.dataset.field;
+                    matchups[i][field] = e.target.value;
+                });
+            });
+
+            // Time edit — inline on the span (double-click to edit)
+            const timeSpan = item.querySelector('.match-time');
+            timeSpan.style.cursor = 'pointer';
+            timeSpan.title = 'Click to edit time';
+            timeSpan.addEventListener('click', () => {
+                const inp = document.createElement('input');
+                inp.type = 'text';
+                inp.value = matchups[idx].time || '';
+                inp.style.cssText = 'width:52px;background:#3a3a3a;border:1px solid #666;border-radius:4px;color:white;padding:2px 4px;font-size:12px;';
+                timeSpan.replaceWith(inp);
+                inp.focus();
+                inp.select();
+                const commit = () => {
+                    matchups[idx].time = inp.value;
+                    inp.replaceWith(timeSpan);
+                    timeSpan.textContent = inp.value;
+                };
+                inp.addEventListener('blur', commit);
+                inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
+            });
+
+            // Delete button
+            item.querySelector('.delete-btn').addEventListener('click', () => {
+                matchups.splice(idx, 1);
+                if (currentlyLoaded === idx) currentlyLoaded = null;
+                else if (currentlyLoaded > idx) currentlyLoaded--;
+                render();
+            });
+
+            // Drag-and-drop
+            item.addEventListener('dragstart', onDragStart);
+            item.addEventListener('dragover', onDragOver);
+            item.addEventListener('drop', onDrop);
+            item.addEventListener('dragend', onDragEnd);
+        }
+
+        // Load button — always active, Challonge mode or not
         item.querySelector('.load-btn').addEventListener('click', () => loadMatchup(idx));
-
-        // Delete button
-        item.querySelector('.delete-btn').addEventListener('click', () => {
-            matchups.splice(idx, 1);
-            if (currentlyLoaded === idx) currentlyLoaded = null;
-            else if (currentlyLoaded > idx) currentlyLoaded--;
-            render();
-        });
-
-        // Drag-and-drop
-        item.addEventListener('dragstart', onDragStart);
-        item.addEventListener('dragover', onDragOver);
-        item.addEventListener('drop', onDrop);
-        item.addEventListener('dragend', onDragEnd);
 
         container.appendChild(item);
     });
@@ -572,31 +681,15 @@ function escHtml(str) {
 }
 
 // ── Load a matchup into the scoreboard ──
-async function loadMatchup(idx) {
+function loadMatchup(idx) {
     const m = matchups[idx];
     if (!m || m.group !== undefined) return;
-
-    // Fetch fresh scores from server in case live-update overwrote in-memory values
-    let ls = 0, rs = 0;
-    try {
-        const res = await fetch('/api/bracket');
-        if (res.ok) {
-            const data = await res.json();
-            const fresh = data.matchups[idx];
-            if (fresh && !fresh.group) {
-                ls = fresh.ls ?? 0;
-                rs = fresh.rs ?? 0;
-            }
-        }
-    } catch (e) {}
 
     socket.emit('loadMatchup', {
         leftTeam:   m.left,
         rightTeam:  m.right,
         leftColor:  m.lc,
         rightColor: m.rc,
-        leftScore:  ls,
-        rightScore: rs,
         matchupIndex: idx,
     });
 
@@ -689,30 +782,6 @@ function onDragEnd(e) {
     dragSrcIdx = null;
 }
 
-socket.on('bracketUpdated', async () => {
-    try {
-        const res = await fetch('/api/bracket');
-        if (!res.ok) return;
-        const data = await res.json();
-        const updated = data.matchups || [];
-        // Patch scores and final flags into live matchups array and update DOM
-        updated.forEach((m, i) => {
-            if (!matchups[i] || m.group) return;
-            matchups[i].ls = m.ls;
-            matchups[i].rs = m.rs;
-            matchups[i].final = m.final;
-            const item = document.querySelector(`.matchup-item[data-idx="${i}"]`);
-            if (!item) return;
-            item.classList.toggle('completed', m.final === true);
-            const inputs = item.querySelectorAll('.score-input');
-            if (inputs[0]) inputs[0].value = m.ls ?? '';
-            if (inputs[1]) inputs[1].value = m.rs ?? '';
-            const unplayBtn = item.querySelector('.unplay-btn');
-            if (unplayBtn) unplayBtn.style.visibility = m.final ? '' : 'hidden';
-        });
-    } catch (e) {}
-});
-
 socket.on('gameUpdate', (state) => {
     const incoming = state.loadedMatchupIndex ?? null;
 
@@ -726,18 +795,97 @@ socket.on('gameUpdate', (state) => {
             btn.classList.toggle('loaded', active);
         });
     }
+});
 
-    // Live-update score inputs for the currently playing matchup (not finalized)
-    if (incoming !== null && matchups[incoming] && !matchups[incoming].final) {
-        matchups[incoming].ls = state.leftScore;
-        matchups[incoming].rs = state.rightScore;
-        const item = document.querySelector(`.matchup-item[data-idx="${incoming}"]`);
-        if (item) {
-            const inputs = item.querySelectorAll('.score-input');
-            if (inputs[0]) inputs[0].value = state.leftScore ?? '';
-            if (inputs[1]) inputs[1].value = state.rightScore ?? '';
-        }
+// ── Challonge settings ──
+const challongeToggle = document.getElementById('challonge-toggle');
+const challongeToggleLabel = document.getElementById('challonge-toggle-label');
+const challongeApiKey = document.getElementById('challonge-api-key');
+const challongeTourney = document.getElementById('challonge-tourney');
+const challongeTourneyList = document.getElementById('challonge-tourney-list');
+const challongeListBtn = document.getElementById('challonge-list-btn');
+const challongeStatusEl = document.getElementById('challonge-status');
+
+function updateChallongeToggleLabel() {
+    challongeToggleLabel.textContent = challongeToggle.checked ? 'Enabled' : 'Disabled';
+}
+
+function renderChallongeStatus(status) {
+    if (!status) { challongeStatusEl.textContent = ''; return; }
+    const state = status.state || 'idle';
+    challongeStatusEl.className = 'challonge-status ' + state;
+    if (state === 'error') {
+        challongeStatusEl.textContent = `Error: ${status.last_error || 'unknown error'}`;
+    } else if (status.last_poll_at) {
+        challongeStatusEl.textContent = `Last synced: ${status.last_poll_at}`;
+    } else {
+        challongeStatusEl.textContent = 'Not started';
     }
+}
+
+async function loadChallongeStatus() {
+    try {
+        const res = await fetch('/api/challonge/status');
+        if (res.ok) renderChallongeStatus(await res.json());
+    } catch (e) {}
+}
+
+socket.emit('getChallongeConfig', (cfg) => {
+    challongeToggle.checked = !!cfg.enabled;
+    challongeApiKey.value = cfg.apiKey || '';
+    challongeTourney.value = cfg.tourney || '';
+    updateChallongeToggleLabel();
+});
+loadChallongeStatus();
+setInterval(() => { loadChallongeStatus(); loadSchedule(); }, 15000);
+
+challongeToggle.addEventListener('change', () => {
+    updateChallongeToggleLabel();
+    socket.emit('toggleChallonge', challongeToggle.checked, () => {
+        loadChallongeStatus();
+        loadSchedule();
+    });
+});
+
+document.getElementById('challonge-save-btn').addEventListener('click', () => {
+    socket.emit('setChallongeConfig', {
+        apiKey: challongeApiKey.value,
+        tourney: challongeTourney.value,
+    }, () => {
+        loadChallongeStatus();
+        loadSchedule();
+    });
+});
+
+challongeListBtn.addEventListener('click', () => {
+    if (!challongeApiKey.value) {
+        challongeStatusEl.className = 'challonge-status error';
+        challongeStatusEl.textContent = 'Enter an API key first';
+        return;
+    }
+    challongeListBtn.disabled = true;
+    challongeListBtn.textContent = 'Loading…';
+    socket.emit('listChallongeTournaments', { apiKey: challongeApiKey.value }, (res) => {
+        challongeListBtn.disabled = false;
+        challongeListBtn.textContent = 'List Tournaments';
+        if (res.error) {
+            challongeStatusEl.className = 'challonge-status error';
+            challongeStatusEl.textContent = `Error: ${res.error}`;
+            return;
+        }
+        challongeTourneyList.classList.add('visible');
+        challongeTourneyList.innerHTML = res.tournaments.map(t => {
+            const slug = t.slug || t.id;
+            return `
+                <div class="challonge-tourney-list-row">
+                    <span class="challonge-tourney-list-name">${escHtml(t.name)}
+                        <span class="challonge-tourney-list-meta">(${escHtml(t.state)}, ${escHtml(t.tournament_type)})</span>
+                    </span>
+                    <span class="challonge-tourney-list-slug">${escHtml(slug)}</span>
+                </div>
+            `;
+        }).join('');
+    });
 });
 
 loadSchedule();
