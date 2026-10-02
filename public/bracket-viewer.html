@@ -292,7 +292,7 @@ function render(data) {
 
 async function load() {
     try {
-        const res = await fetch('/api/challonge/bracket');
+        const res = await fetch('/api/sync/challonge/bracket');
         if (!res.ok) {
             document.getElementById('content').innerHTML = '<div class="empty-state">No bracket data yet — enable Challonge sync from the Schedule page.</div>';
             return;

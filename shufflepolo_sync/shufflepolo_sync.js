@@ -8,7 +8,7 @@
 // This process additionally, on every snapshot:
 //
 //   1. POSTs a compact live-game snapshot (score/clock) to the scorebored
-//      Node server (POST /api/shufflepolo/push), which merges it into
+//      Node server (POST /api/sync/shufflepolo/push), which merges it into
 //      gameState and broadcasts it over socket.io. Node owns the
 //      left/right <-> team1/team2 mapping (it respects whatever the
 //      operator's sidesSwapped toggle is currently set to), same as
@@ -31,7 +31,7 @@
 //
 // Usage:
 //   SHUFFLEPOLO_TOURNAMENT=<uuid> [SHUFFLEPOLO_FEED_URL=...] \
-//     PUSH_URL=http://localhost:3000/api/shufflepolo/push \
+//     PUSH_URL=http://localhost:3000/api/sync/shufflepolo/push \
 //     node shufflepolo_sync.js
 
 const { createClient } = require('@supabase/supabase-js');
@@ -41,7 +41,7 @@ const http = require('http');
 
 const TOURNAMENT = process.env.SHUFFLEPOLO_TOURNAMENT;
 const FEED_URL = process.env.SHUFFLEPOLO_FEED_URL || 'https://xavxyvnrtqccnyonlfeu.supabase.co/functions/v1/scoreboard-feed';
-const PUSH_URL = process.env.PUSH_URL || 'http://localhost:3000/api/shufflepolo/push';
+const PUSH_URL = process.env.PUSH_URL || 'http://localhost:3000/api/sync/shufflepolo/push';
 
 if (!TOURNAMENT) {
   console.error('usage: SHUFFLEPOLO_TOURNAMENT=<uuid> node shufflepolo_sync.js');

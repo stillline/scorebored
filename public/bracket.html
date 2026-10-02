@@ -432,63 +432,7 @@
             <a href="http://10.42.0.1:8000/" target="_blank">Companion</a>
     </div>
 
-    <div class="challonge-panel">
-        <div class="challonge-panel-header">
-            <span class="challonge-panel-title">Challonge Sync</span>
-            <label class="challonge-toggle">
-                <input type="checkbox" id="challonge-toggle">
-                <span class="challonge-toggle-slider"></span>
-                <span id="challonge-toggle-label">Disabled</span>
-            </label>
-        </div>
-        <div class="challonge-fields">
-            <div class="challonge-row">
-                <label class="challonge-row-label" for="challonge-api-key">API key</label>
-                <div class="challonge-row-inline">
-                    <input type="password" id="challonge-api-key" placeholder="API key">
-                    <button class="challonge-list-btn" id="challonge-list-btn">List Tournaments</button>
-                </div>
-                <div class="challonge-tourney-list" id="challonge-tourney-list"></div>
-            </div>
-            <div class="challonge-row">
-                <label class="challonge-row-label" for="challonge-tourney">Tournament slug</label>
-                <input type="text" id="challonge-tourney" placeholder="Tournament slug or id">
-            </div>
-            <div class="challonge-row">
-                <button class="challonge-save-btn" id="challonge-save-btn">Save</button>
-            </div>
-        </div>
-        <div class="challonge-status" id="challonge-status"></div>
-    </div>
-
-    <div class="challonge-panel">
-        <div class="challonge-panel-header">
-            <span class="challonge-panel-title">Podium Sync</span>
-            <label class="challonge-toggle">
-                <input type="checkbox" id="podium-toggle">
-                <span class="challonge-toggle-slider"></span>
-                <span id="podium-toggle-label">Disabled</span>
-            </label>
-        </div>
-        <div class="challonge-fields">
-            <div class="challonge-row">
-                <label class="challonge-row-label" for="podium-api-key">API key</label>
-                <input type="password" id="podium-api-key" placeholder="API key">
-            </div>
-            <div class="challonge-row">
-                <label class="challonge-row-label" for="podium-tournament">Tournament slug</label>
-                <input type="text" id="podium-tournament" placeholder="Tournament slug">
-            </div>
-            <div class="challonge-row">
-                <label class="challonge-row-label" for="podium-court">Court</label>
-                <input type="text" id="podium-court" placeholder="Court name, e.g. 2">
-            </div>
-            <div class="challonge-row">
-                <button class="challonge-save-btn" id="podium-save-btn">Save</button>
-            </div>
-        </div>
-        <div class="challonge-status" id="podium-status"></div>
-    </div>
+    <div id="sync-panels-container"></div>
 
     <div id="matchup-list-container"></div>
 
@@ -826,155 +770,182 @@ socket.on('gameUpdate', (state) => {
     }
 });
 
-// ── Challonge settings ──
-const challongeToggle = document.getElementById('challonge-toggle');
-const challongeToggleLabel = document.getElementById('challonge-toggle-label');
-const challongeApiKey = document.getElementById('challonge-api-key');
-const challongeTourney = document.getElementById('challonge-tourney');
-const challongeTourneyList = document.getElementById('challonge-tourney-list');
-const challongeListBtn = document.getElementById('challonge-list-btn');
-const challongeStatusEl = document.getElementById('challonge-status');
+// ── Tournament-sync settings ──
+// One render function + one set of generic socket events
+// (getSyncConfig/setSyncConfig/toggleSync) drive all three providers.
+// Each provider just supplies its field list and status-line formatter.
 
-function updateChallongeToggleLabel() {
-    challongeToggleLabel.textContent = challongeToggle.checked ? 'Enabled' : 'Disabled';
-}
+const SYNC_PROVIDERS = [
+    {
+        key: 'challonge',
+        label: 'Challonge Sync',
+        fields: [
+            { name: 'apiKey', label: 'API key', type: 'password', extraButton: 'List Tournaments' },
+            { name: 'tourney', label: 'Tournament slug', type: 'text', placeholder: 'Tournament slug or id' },
+        ],
+        formatStatus(status) {
+            const state = status.state || 'idle';
+            if (state === 'error') return { cls: 'error', text: `Error: ${status.last_error || 'unknown error'}` };
+            if (status.last_poll_at) return { cls: 'idle', text: `Last synced: ${status.last_poll_at}` };
+            return { cls: '', text: 'Not started' };
+        },
+    },
+    {
+        key: 'podium',
+        label: 'Podium Sync',
+        fields: [
+            { name: 'apiKey', label: 'API key', type: 'password' },
+            { name: 'tournament', label: 'Tournament slug', type: 'text', placeholder: 'Tournament slug' },
+            { name: 'court', label: 'Court', type: 'text', placeholder: 'Court name, e.g. 2' },
+        ],
+        formatStatus(status) {
+            const state = status.state || 'off';
+            if (state === 'error') return { cls: 'error', text: `Error: ${status.last_error || 'unknown error'}` };
+            if (status.connected) return { cls: 'idle', text: `Live — last event: ${status.last_event_at}` };
+            return { cls: '', text: 'Not started' };
+        },
+    },
+    {
+        key: 'shufflepolo',
+        label: 'Shufflepolo Sync',
+        fields: [
+            { name: 'tournamentId', label: 'Tournament ID', type: 'text', placeholder: 'UUID from the tournament page URL' },
+            { name: 'feedUrl', label: 'Feed URL (optional)', type: 'text', placeholder: 'Defaults to the production feed' },
+        ],
+        formatStatus(status) {
+            const state = status.state || 'off';
+            if (state === 'error') return { cls: 'error', text: `Error: ${status.last_error || 'unknown error'}` };
+            if (status.connected) return { cls: 'idle', text: `Live — last event: ${status.last_event_at}` };
+            return { cls: '', text: 'Not started' };
+        },
+    },
+];
 
-function renderChallongeStatus(status) {
-    if (!status) { challongeStatusEl.textContent = ''; return; }
-    const state = status.state || 'idle';
-    challongeStatusEl.className = 'challonge-status ' + state;
-    if (state === 'error') {
-        challongeStatusEl.textContent = `Error: ${status.last_error || 'unknown error'}`;
-    } else if (status.last_poll_at) {
-        challongeStatusEl.textContent = `Last synced: ${status.last_poll_at}`;
-    } else {
-        challongeStatusEl.textContent = 'Not started';
-    }
-}
-
-async function loadChallongeStatus() {
-    try {
-        const res = await fetch('/api/challonge/status');
-        if (res.ok) renderChallongeStatus(await res.json());
-    } catch (e) {}
-}
-
-socket.emit('getChallongeConfig', (cfg) => {
-    challongeToggle.checked = !!cfg.enabled;
-    challongeApiKey.value = cfg.apiKey || '';
-    challongeTourney.value = cfg.tourney || '';
-    updateChallongeToggleLabel();
-});
-loadChallongeStatus();
-setInterval(() => { loadChallongeStatus(); loadSchedule(); }, 15000);
-
-challongeToggle.addEventListener('change', () => {
-    updateChallongeToggleLabel();
-    socket.emit('toggleChallonge', challongeToggle.checked, () => {
-        loadChallongeStatus();
-        loadSchedule();
-    });
-});
-
-document.getElementById('challonge-save-btn').addEventListener('click', () => {
-    socket.emit('setChallongeConfig', {
-        apiKey: challongeApiKey.value,
-        tourney: challongeTourney.value,
-    }, () => {
-        loadChallongeStatus();
-        loadSchedule();
-    });
-});
-
-challongeListBtn.addEventListener('click', () => {
-    if (!challongeApiKey.value) {
-        challongeStatusEl.className = 'challonge-status error';
-        challongeStatusEl.textContent = 'Enter an API key first';
-        return;
-    }
-    challongeListBtn.disabled = true;
-    challongeListBtn.textContent = 'Loading…';
-    socket.emit('listChallongeTournaments', { apiKey: challongeApiKey.value }, (res) => {
-        challongeListBtn.disabled = false;
-        challongeListBtn.textContent = 'List Tournaments';
-        if (res.error) {
-            challongeStatusEl.className = 'challonge-status error';
-            challongeStatusEl.textContent = `Error: ${res.error}`;
-            return;
-        }
-        challongeTourneyList.classList.add('visible');
-        challongeTourneyList.innerHTML = res.tournaments.map(t => {
-            const slug = t.slug || t.id;
-            return `
-                <div class="challonge-tourney-list-row">
-                    <span class="challonge-tourney-list-name">${escHtml(t.name)}
-                        <span class="challonge-tourney-list-meta">(${escHtml(t.state)}, ${escHtml(t.tournament_type)})</span>
-                    </span>
-                    <span class="challonge-tourney-list-slug">${escHtml(slug)}</span>
+function renderSyncPanels() {
+    const container = document.getElementById('sync-panels-container');
+    container.innerHTML = SYNC_PROVIDERS.map(p => `
+        <div class="challonge-panel">
+            <div class="challonge-panel-header">
+                <span class="challonge-panel-title">${escHtml(p.label)}</span>
+                <label class="challonge-toggle">
+                    <input type="checkbox" id="sync-${p.key}-toggle">
+                    <span class="challonge-toggle-slider"></span>
+                    <span id="sync-${p.key}-toggle-label">Disabled</span>
+                </label>
+            </div>
+            <div class="challonge-fields">
+                ${p.fields.map(f => `
+                    <div class="challonge-row">
+                        <label class="challonge-row-label" for="sync-${p.key}-${f.name}">${escHtml(f.label)}</label>
+                        ${f.extraButton ? `
+                            <div class="challonge-row-inline">
+                                <input type="${f.type}" id="sync-${p.key}-${f.name}" placeholder="${escHtml(f.placeholder || f.label)}">
+                                <button class="challonge-list-btn" id="sync-${p.key}-list-btn">${escHtml(f.extraButton)}</button>
+                            </div>
+                            <div class="challonge-tourney-list" id="sync-${p.key}-tourney-list"></div>
+                        ` : `
+                            <input type="${f.type}" id="sync-${p.key}-${f.name}" placeholder="${escHtml(f.placeholder || f.label)}">
+                        `}
+                    </div>
+                `).join('')}
+                <div class="challonge-row">
+                    <button class="challonge-save-btn" id="sync-${p.key}-save-btn">Save</button>
                 </div>
-            `;
-        }).join('');
-    });
-});
-
-// ── Podium settings ──
-const podiumToggle = document.getElementById('podium-toggle');
-const podiumToggleLabel = document.getElementById('podium-toggle-label');
-const podiumApiKey = document.getElementById('podium-api-key');
-const podiumTournament = document.getElementById('podium-tournament');
-const podiumCourt = document.getElementById('podium-court');
-const podiumStatusEl = document.getElementById('podium-status');
-
-function updatePodiumToggleLabel() {
-    podiumToggleLabel.textContent = podiumToggle.checked ? 'Enabled' : 'Disabled';
+            </div>
+            <div class="challonge-status" id="sync-${p.key}-status"></div>
+        </div>
+    `).join('');
 }
 
-function renderPodiumStatus(status) {
-    if (!status) { podiumStatusEl.textContent = ''; return; }
-    const state = status.state || 'off';
-    podiumStatusEl.className = 'challonge-status ' + (state === 'error' ? 'error' : (status.connected ? 'idle' : ''));
-    if (state === 'error') {
-        podiumStatusEl.textContent = `Error: ${status.last_error || 'unknown error'}`;
-    } else if (status.connected) {
-        podiumStatusEl.textContent = `Live — last event: ${status.last_event_at}`;
-    } else {
-        podiumStatusEl.textContent = 'Not started';
+function wireSyncPanel(p) {
+    const toggle = document.getElementById(`sync-${p.key}-toggle`);
+    const toggleLabel = document.getElementById(`sync-${p.key}-toggle-label`);
+    const statusEl = document.getElementById(`sync-${p.key}-status`);
+    const fieldEls = {};
+    p.fields.forEach(f => { fieldEls[f.name] = document.getElementById(`sync-${p.key}-${f.name}`); });
+
+    function updateToggleLabel() {
+        toggleLabel.textContent = toggle.checked ? 'Enabled' : 'Disabled';
+    }
+
+    function renderStatus(status) {
+        if (!status) { statusEl.textContent = ''; return; }
+        const { cls, text } = p.formatStatus(status);
+        statusEl.className = 'challonge-status ' + cls;
+        statusEl.textContent = text;
+    }
+
+    async function loadStatus() {
+        try {
+            const res = await fetch(`/api/sync/${p.key}/status`);
+            if (res.ok) renderStatus(await res.json());
+        } catch (e) {}
+    }
+
+    socket.emit('getSyncConfig', p.key, (cfg) => {
+        toggle.checked = !!cfg.enabled;
+        p.fields.forEach(f => { fieldEls[f.name].value = cfg[f.name] || ''; });
+        updateToggleLabel();
+    });
+    loadStatus();
+    setInterval(() => { loadStatus(); if (p.key === 'challonge') loadSchedule(); }, 15000);
+
+    toggle.addEventListener('change', () => {
+        updateToggleLabel();
+        socket.emit('toggleSync', { provider: p.key, enabled: toggle.checked }, () => {
+            loadStatus();
+            if (p.key === 'challonge') loadSchedule();
+        });
+    });
+
+    document.getElementById(`sync-${p.key}-save-btn`).addEventListener('click', () => {
+        const fields = { provider: p.key };
+        p.fields.forEach(f => { fields[f.name] = fieldEls[f.name].value; });
+        socket.emit('setSyncConfig', fields, () => {
+            loadStatus();
+            if (p.key === 'challonge') loadSchedule();
+        });
+    });
+
+    // Challonge-only extra: list tournaments visible to the entered API key.
+    const listBtn = document.getElementById(`sync-${p.key}-list-btn`);
+    if (listBtn) {
+        const tourneyList = document.getElementById(`sync-${p.key}-tourney-list`);
+        listBtn.addEventListener('click', () => {
+            if (!fieldEls.apiKey.value) {
+                statusEl.className = 'challonge-status error';
+                statusEl.textContent = 'Enter an API key first';
+                return;
+            }
+            listBtn.disabled = true;
+            listBtn.textContent = 'Loading…';
+            socket.emit('listChallongeTournaments', { apiKey: fieldEls.apiKey.value }, (res) => {
+                listBtn.disabled = false;
+                listBtn.textContent = 'List Tournaments';
+                if (res.error) {
+                    statusEl.className = 'challonge-status error';
+                    statusEl.textContent = `Error: ${res.error}`;
+                    return;
+                }
+                tourneyList.classList.add('visible');
+                tourneyList.innerHTML = res.tournaments.map(t => {
+                    const slug = t.slug || t.id;
+                    return `
+                        <div class="challonge-tourney-list-row">
+                            <span class="challonge-tourney-list-name">${escHtml(t.name)}
+                                <span class="challonge-tourney-list-meta">(${escHtml(t.state)}, ${escHtml(t.tournament_type)})</span>
+                            </span>
+                            <span class="challonge-tourney-list-slug">${escHtml(slug)}</span>
+                        </div>
+                    `;
+                }).join('');
+            });
+        });
     }
 }
 
-async function loadPodiumStatus() {
-    try {
-        const res = await fetch('/api/podium/status');
-        if (res.ok) renderPodiumStatus(await res.json());
-    } catch (e) {}
-}
-
-socket.emit('getPodiumConfig', (cfg) => {
-    podiumToggle.checked = !!cfg.enabled;
-    podiumApiKey.value = cfg.apiKey || '';
-    podiumTournament.value = cfg.tournament || '';
-    podiumCourt.value = cfg.court || '';
-    updatePodiumToggleLabel();
-});
-loadPodiumStatus();
-setInterval(loadPodiumStatus, 15000);
-
-podiumToggle.addEventListener('change', () => {
-    updatePodiumToggleLabel();
-    socket.emit('togglePodium', podiumToggle.checked, () => {
-        loadPodiumStatus();
-    });
-});
-
-document.getElementById('podium-save-btn').addEventListener('click', () => {
-    socket.emit('setPodiumConfig', {
-        apiKey: podiumApiKey.value,
-        tournament: podiumTournament.value,
-        court: podiumCourt.value,
-    }, () => {
-        loadPodiumStatus();
-    });
-});
+renderSyncPanels();
+SYNC_PROVIDERS.forEach(wireSyncPanel);
 
 loadSchedule();
 </script>

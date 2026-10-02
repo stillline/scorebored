@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { Atem } = require('atem-connection');
 const { spawn, exec, execFile } = require('child_process');
+const { SyncManager } = require('./lib/sync');
 
 const app = express();
 const server = http.createServer(app);
@@ -14,18 +15,6 @@ const io = socketIo(server);
 const PORT = process.env.PORT || 3000;
 const STATE_FILE = path.join(__dirname, 'gamestate.json');
 const BRACKET_FILE = path.join(__dirname, 'bracket.json');
-
-// Challonge integration
-const CHALLONGE_DIR = path.join(__dirname, 'challonge');
-const CHALLONGE_SCRIPT = path.join(CHALLONGE_DIR, 'challonge_sync.py');
-const CHALLONGE_STATE_DIR = path.join(CHALLONGE_DIR, 'state');
-const CHALLONGE_CONFIG_FILE = path.join(__dirname, 'challonge-config.json');
-
-// Podium integration
-const PODIUM_DIR = path.join(__dirname, 'podium_sync');
-const PODIUM_SCRIPT = path.join(PODIUM_DIR, 'podium_sync.py');
-const PODIUM_STATE_DIR = path.join(PODIUM_DIR, 'state');
-const PODIUM_CONFIG_FILE = path.join(__dirname, 'podium-config.json');
 
 // ATEM Configuration
 const ATEM_IP = process.env.ATEM_IP || '10.42.0.100'; // Default ATEM IP
@@ -384,88 +373,99 @@ function freqToChannel(ghz) {
   return null;
 }
 
-// ── Challonge Integration ──
-// Standalone, toggleable, read-only. Never writes anything back to Challonge.
+// ── Tournament-sync integrations ──
+// Three standalone, toggleable, read-only-against-the-platform providers
+// (Challonge, Podium, Shufflepolo), unified behind lib/sync.js's SyncManager
+// for the parts that are identical across all three: subprocess lifecycle,
+// config load/save, state-file reads. What varies per provider (config
+// fields, env vars, how a live push gets applied to gameState) is defined
+// here, next to each provider's REST/socket wiring below.
 
-let challongeProc = null;
-let challongeConfig = { apiKey: '', tourney: '', enabled: false };
+const syncProviders = {};
 
-function loadChallongeConfig() {
-  try {
-    if (fs.existsSync(CHALLONGE_CONFIG_FILE)) {
-      const saved = JSON.parse(fs.readFileSync(CHALLONGE_CONFIG_FILE, 'utf8'));
-      challongeConfig = { ...challongeConfig, ...saved };
-    }
-  } catch (error) {
-    console.error('Error loading Challonge config:', error);
-  }
-}
+syncProviders.challonge = new SyncManager({
+  name: 'challonge',
+  dir: path.join(__dirname, 'challonge'),
+  script: path.join(__dirname, 'challonge', 'challonge_sync.py'),
+  command: 'python3',
+  configFile: path.join(__dirname, 'challonge-config.json'),
+  configDefaults: { apiKey: '', tourney: '', enabled: false },
+  requiredFields: ['apiKey', 'tourney'],
+  stateDir: path.join(__dirname, 'challonge', 'state'),
+  buildEnv: (config) => ({
+    CHALLONGE_API_KEY: config.apiKey,
+    CHALLONGE_TOURNEY: config.tourney,
+  }),
+  maskConfig: (config) => ({
+    apiKey: config.apiKey ? '••••••••' : '',
+    tourney: config.tourney,
+    enabled: config.enabled,
+  }),
+});
 
-function saveChallongeConfig() {
-  try {
-    fs.writeFileSync(CHALLONGE_CONFIG_FILE, JSON.stringify(challongeConfig, null, 2));
-  } catch (error) {
-    console.error('Error saving Challonge config:', error);
-  }
-}
+syncProviders.podium = new SyncManager({
+  name: 'podium',
+  dir: path.join(__dirname, 'podium_sync'),
+  script: path.join(__dirname, 'podium_sync', 'podium_sync.py'),
+  command: 'python3',
+  configFile: path.join(__dirname, 'podium-config.json'),
+  configDefaults: { apiKey: '', tournament: '', court: '', enabled: false },
+  requiredFields: ['apiKey', 'tournament', 'court'],
+  stateDir: path.join(__dirname, 'podium_sync', 'state'),
+  buildEnv: (config) => ({
+    PODIUM_API_KEY: config.apiKey,
+    PODIUM_TOURNAMENT: config.tournament,
+    PODIUM_COURT: config.court,
+    PUSH_URL: `http://localhost:${PORT}/api/sync/podium/push`,
+  }),
+  maskConfig: (config) => ({
+    apiKey: config.apiKey ? '••••••••' : '',
+    tournament: config.tournament,
+    court: config.court,
+    enabled: config.enabled,
+  }),
+});
+// Podium pushes live game state (score/clock/penalties) rather than being
+// polled, unlike Challonge. On process exit, clear the live fields it owns
+// rather than leaving a stale clock/penalties on screen.
+syncProviders.podium.onExit = () => {
+  gameState.clock = null;
+  gameState.penalties = null;
+  gameState.timeouts = null;
+  saveGameState();
+  io.emit('gameUpdate', gameState);
+};
 
-function readChallongeStateFile(filename) {
-  try {
-    const filePath = path.join(CHALLONGE_STATE_DIR, filename);
-    if (!fs.existsSync(filePath)) return null;
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch (error) {
-    console.error(`Error reading challonge/state/${filename}:`, error);
-    return null;
-  }
-}
-
-function startChallongeSync() {
-  if (challongeProc) return;
-  if (!challongeConfig.apiKey || !challongeConfig.tourney) {
-    console.log('Challonge: cannot start, missing apiKey or tourney');
-    return;
-  }
-
-  console.log(`Challonge: starting sync for tournament "${challongeConfig.tourney}"`);
-  challongeProc = spawn('python3', [CHALLONGE_SCRIPT], {
-    cwd: CHALLONGE_DIR,
-    env: {
-      ...process.env,
-      CHALLONGE_API_KEY: challongeConfig.apiKey,
-      CHALLONGE_TOURNEY: challongeConfig.tourney,
-    },
-  });
-
-  challongeProc.stdout.on('data', (chunk) => {
-    console.log(`[challonge] ${chunk.toString().trim()}`);
-  });
-  challongeProc.stderr.on('data', (chunk) => {
-    console.error(`[challonge] ${chunk.toString().trim()}`);
-  });
-  challongeProc.on('close', (code) => {
-    console.log(`Challonge sync process exited with code ${code}`);
-    challongeProc = null;
-  });
-  challongeProc.on('error', (err) => {
-    console.error('Challonge sync spawn error:', err.message);
-    challongeProc = null;
-  });
-}
-
-function stopChallongeSync() {
-  if (!challongeProc) return;
-  console.log('Challonge: stopping sync');
-  challongeProc.kill();
-  challongeProc = null;
-}
-
-function pollChallongeNow() {
-  if (challongeProc) challongeProc.kill('SIGUSR1');
-}
+syncProviders.shufflepolo = new SyncManager({
+  name: 'shufflepolo',
+  dir: path.join(__dirname, 'shufflepolo_sync'),
+  script: path.join(__dirname, 'shufflepolo_sync', 'shufflepolo_sync.js'),
+  command: 'node',
+  configFile: path.join(__dirname, 'shufflepolo-config.json'),
+  configDefaults: { tournamentId: '', feedUrl: '', enabled: false },
+  requiredFields: ['tournamentId'],
+  stateDir: path.join(__dirname, 'shufflepolo_sync', 'state'),
+  buildEnv: (config) => ({
+    SHUFFLEPOLO_TOURNAMENT: config.tournamentId,
+    ...(config.feedUrl ? { SHUFFLEPOLO_FEED_URL: config.feedUrl } : {}),
+    PUSH_URL: `http://localhost:${PORT}/api/sync/shufflepolo/push`,
+  }),
+  // No API key - the feed is public/anonymous, nothing to mask.
+  maskConfig: (config) => ({
+    tournamentId: config.tournamentId,
+    feedUrl: config.feedUrl,
+    enabled: config.enabled,
+  }),
+});
+syncProviders.shufflepolo.onExit = () => {
+  gameState.clock = null;
+  saveGameState();
+  io.emit('gameUpdate', gameState);
+};
 
 // One-off read-only lookup of all tournaments visible to an API key, so the
 // bracket page UI can offer a picker instead of requiring a hand-typed slug.
+// Challonge-specific - no generic equivalent for the other providers.
 function listChallongeTournaments(apiKey) {
   return new Promise((resolve, reject) => {
     const req = https.request('https://api.challonge.com/v2.1/tournaments.json', {
@@ -506,125 +506,6 @@ function listChallongeTournaments(apiKey) {
   });
 }
 
-loadChallongeConfig();
-if (challongeConfig.enabled) startChallongeSync();
-
-// ── Podium Integration ──
-// Standalone, toggleable, read-only against Podium (it only subscribes,
-// never sends score/clock changes back). Unlike Challonge, Podium pushes
-// live game state (score/clock/penalties) rather than being polled, so
-// podium_sync.py posts each update to POST /api/podium/push below, which
-// merges it into gameState and broadcasts it over socket.io just like a
-// manual scoreboard edit would.
-
-let podiumProc = null;
-let podiumConfig = { apiKey: '', tournament: '', court: '', enabled: false };
-
-function loadPodiumConfig() {
-  try {
-    if (fs.existsSync(PODIUM_CONFIG_FILE)) {
-      const saved = JSON.parse(fs.readFileSync(PODIUM_CONFIG_FILE, 'utf8'));
-      podiumConfig = { ...podiumConfig, ...saved };
-    }
-  } catch (error) {
-    console.error('Error loading Podium config:', error);
-  }
-}
-
-function savePodiumConfig() {
-  try {
-    fs.writeFileSync(PODIUM_CONFIG_FILE, JSON.stringify(podiumConfig, null, 2));
-  } catch (error) {
-    console.error('Error saving Podium config:', error);
-  }
-}
-
-function readPodiumStateFile(filename) {
-  try {
-    const filePath = path.join(PODIUM_STATE_DIR, filename);
-    if (!fs.existsSync(filePath)) return null;
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch (error) {
-    console.error(`Error reading podium_sync/state/${filename}:`, error);
-    return null;
-  }
-}
-
-// .kill() only sends SIGTERM — it doesn't wait for the process to actually
-// exit. startPodiumSync() must not spawn a replacement until the previous
-// process's 'close' event has actually fired, or a stop()+start() pair (as
-// setPodiumConfig does) leaks an orphaned subprocess still holding the old
-// subscription. restartPending defers the respawn to the close handler
-// instead of racing it.
-let podiumRestartPending = false;
-
-function startPodiumSync() {
-  if (podiumProc) return;
-  if (!podiumConfig.apiKey || !podiumConfig.tournament || !podiumConfig.court) {
-    console.log('Podium: cannot start, missing apiKey, tournament or court');
-    return;
-  }
-
-  console.log(`Podium: starting sync for tournament "${podiumConfig.tournament}" court "${podiumConfig.court}"`);
-  podiumProc = spawn('python3', [PODIUM_SCRIPT], {
-    cwd: PODIUM_DIR,
-    env: {
-      ...process.env,
-      PODIUM_API_KEY: podiumConfig.apiKey,
-      PODIUM_TOURNAMENT: podiumConfig.tournament,
-      PODIUM_COURT: podiumConfig.court,
-      PUSH_URL: `http://localhost:${PORT}/api/podium/push`,
-    },
-  });
-
-  podiumProc.stdout.on('data', (chunk) => {
-    console.log(`[podium] ${chunk.toString().trim()}`);
-  });
-  podiumProc.stderr.on('data', (chunk) => {
-    console.error(`[podium] ${chunk.toString().trim()}`);
-  });
-  podiumProc.on('close', (code) => {
-    console.log(`Podium sync process exited with code ${code}`);
-    podiumProc = null;
-    gameState.clock = null;
-    gameState.penalties = null;
-    gameState.timeouts = null;
-    io.emit('gameUpdate', gameState);
-    if (podiumRestartPending) {
-      podiumRestartPending = false;
-      startPodiumSync();
-    }
-  });
-  podiumProc.on('error', (err) => {
-    console.error('Podium sync spawn error:', err.message);
-    podiumProc = null;
-  });
-}
-
-function stopPodiumSync(callback) {
-  if (!podiumProc) {
-    if (callback) callback();
-    return;
-  }
-  console.log('Podium: stopping sync');
-  podiumProc.once('close', () => { if (callback) callback(); });
-  podiumProc.kill();
-  gameState.clock = null;
-  gameState.penalties = null;
-  gameState.timeouts = null;
-  saveGameState();
-  io.emit('gameUpdate', gameState);
-}
-
-function restartPodiumSync() {
-  if (podiumProc) {
-    podiumRestartPending = true;
-    podiumProc.kill();
-  } else {
-    startPodiumSync();
-  }
-}
-
 // Applies a live snapshot from podium_sync.py to gameState, honoring
 // whatever sidesSwapped is currently set to — same left/right mapping
 // loadMatchupByIndex uses, so the director's swap control stays authoritative
@@ -660,8 +541,31 @@ function applyPodiumSnapshot(snapshot) {
   }
 }
 
-loadPodiumConfig();
-if (podiumConfig.enabled) startPodiumSync();
+// Applies a live snapshot from shufflepolo_sync.js to gameState. Shufflepolo
+// reports team1/team2 (not home/away like Podium), but the same
+// sidesSwapped-respecting mapping applies.
+function applyShufflepoloSnapshot(snapshot) {
+  gameState.clock = snapshot.clock || null;
+
+  if (!snapshot.has_game) return;
+
+  if (gameState.sidesSwapped) {
+    gameState.leftTeam = snapshot.team2.name;
+    gameState.rightTeam = snapshot.team1.name;
+    gameState.leftScore = snapshot.team2.score;
+    gameState.rightScore = snapshot.team1.score;
+  } else {
+    gameState.leftTeam = snapshot.team1.name;
+    gameState.rightTeam = snapshot.team2.name;
+    gameState.leftScore = snapshot.team1.score;
+    gameState.rightScore = snapshot.team2.score;
+  }
+}
+
+for (const manager of Object.values(syncProviders)) {
+  manager.loadConfig();
+  if (manager.config.enabled) manager.start();
+}
 
 app.use(express.static('public'));
 
@@ -697,63 +601,70 @@ app.get('/bracket-viewer', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'bracket-viewer.html'));
 });
 
-app.get('/api/podium/config', (req, res) => {
-  res.json({
-    apiKey: podiumConfig.apiKey ? '••••••••' : '',
-    tournament: podiumConfig.tournament,
-    court: podiumConfig.court,
-    enabled: podiumConfig.enabled,
-  });
+// ── Generic tournament-sync REST routes ──
+// One shape for all three providers (challonge/podium/shufflepolo). Provider-
+// specific extras that don't fit (e.g. Challonge's tournament listing) stay
+// as additive routes layered on top instead of forcing everything in here.
+
+function getSyncProvider(req, res) {
+  const manager = syncProviders[req.params.provider];
+  if (!manager) {
+    res.status(404).json({ error: `Unknown sync provider "${req.params.provider}"` });
+    return null;
+  }
+  return manager;
+}
+
+app.get('/api/sync/:provider/config', (req, res) => {
+  const manager = getSyncProvider(req, res);
+  if (!manager) return;
+  res.json(manager.maskedConfig());
 });
 
-app.get('/api/podium/status', (req, res) => {
-  res.json(readPodiumStateFile('status.json') || { state: podiumConfig.enabled ? 'starting' : 'off', connected: false, last_event_at: null, last_error: null });
+app.get('/api/sync/:provider/status', (req, res) => {
+  const manager = getSyncProvider(req, res);
+  if (!manager) return;
+  res.json(manager.readStateFile('status.json') || { state: manager.config.enabled ? 'starting' : 'off', connected: false, last_poll_at: null, last_event_at: null, last_error: null });
 });
 
-app.get('/api/podium/participants', (req, res) => {
-  const data = readPodiumStateFile('participants.json');
-  if (!data) return res.status(404).json({ error: 'No Podium participant data yet' });
+app.get('/api/sync/:provider/participants', (req, res) => {
+  const manager = getSyncProvider(req, res);
+  if (!manager) return;
+  const data = manager.readStateFile('participants.json');
+  if (!data) return res.status(404).json({ error: `No ${req.params.provider} participant data yet` });
   res.json(data);
 });
 
-app.get('/api/podium/bracket', (req, res) => {
-  const data = readPodiumStateFile('bracket.json');
-  if (!data) return res.status(404).json({ error: 'No Podium bracket data yet' });
+app.get('/api/sync/:provider/bracket', (req, res) => {
+  const manager = getSyncProvider(req, res);
+  if (!manager) return;
+  const data = manager.readStateFile('bracket.json');
+  if (!data) return res.status(404).json({ error: `No ${req.params.provider} bracket data yet` });
   res.json(data);
 });
 
-// podium_sync.py posts here on every live-stream event. No auth beyond
-// binding to localhost — this is a same-host IPC channel, not a public API.
-app.post('/api/podium/push', express.json(), (req, res) => {
+// podium_sync.py / shufflepolo_sync.js post here on every live event. No
+// auth beyond binding to localhost — this is a same-host IPC channel, not a
+// public API. Challonge has no push route - it's polled, not pushed to.
+const SYNC_PUSH_HANDLERS = {
+  podium: applyPodiumSnapshot,
+  shufflepolo: applyShufflepoloSnapshot,
+};
+
+app.post('/api/sync/:provider/push', express.json(), (req, res) => {
+  const applySnapshot = SYNC_PUSH_HANDLERS[req.params.provider];
+  if (!applySnapshot) {
+    return res.status(404).json({ error: `"${req.params.provider}" does not accept pushes` });
+  }
   try {
-    applyPodiumSnapshot(req.body);
+    applySnapshot(req.body);
     saveGameState();
     io.emit('gameUpdate', gameState);
     res.json({ ok: true });
   } catch (error) {
-    console.error('Error applying Podium push:', error);
+    console.error(`Error applying ${req.params.provider} push:`, error);
     res.status(400).json({ error: error.message });
   }
-});
-
-app.get('/api/challonge/config', (req, res) => {
-  res.json({ apiKey: challongeConfig.apiKey ? '••••••••' : '', tourney: challongeConfig.tourney, enabled: challongeConfig.enabled });
-});
-
-app.get('/api/challonge/status', (req, res) => {
-  res.json(readChallongeStateFile('status.json') || { state: challongeConfig.enabled ? 'starting' : 'off', last_poll_at: null, last_error: null });
-});
-
-app.get('/api/challonge/participants', (req, res) => {
-  const data = readChallongeStateFile('participants.json');
-  if (!data) return res.status(404).json({ error: 'No Challonge participant data yet' });
-  res.json(data);
-});
-
-app.get('/api/challonge/bracket', (req, res) => {
-  const data = readChallongeStateFile('bracket.json');
-  if (!data) return res.status(404).json({ error: 'No Challonge bracket data yet' });
-  res.json(data);
 });
 
 app.get('/api/bracket', (req, res) => {
@@ -912,7 +823,7 @@ function navigateGame(direction) {
   const currentIdx = gameState.loadedMatchupIndex ?? -1;
   const nextIdx = findNextMatchupIndex(bracket.matchups, currentIdx, direction);
   if (nextIdx === null) {
-    if (direction > 0 && challongeConfig.enabled) pollChallongeNow();
+    if (direction > 0 && syncProviders.challonge.config.enabled) syncProviders.challonge.pollNow();
     return { ok: false, error: direction > 0 ? 'No next matchup' : 'No previous matchup' };
   }
   loadMatchupByIndex(bracket.matchups, nextIdx);
@@ -1309,42 +1220,38 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── Challonge Integration ──
+  // ── Generic tournament-sync socket events ──
+  // One shape for all three providers. `provider` is 'challonge' | 'podium' | 'shufflepolo'.
 
-  socket.on('getChallongeConfig', (callback) => {
-    callback({
-      apiKey: challongeConfig.apiKey ? '••••••••' : '',
-      tourney: challongeConfig.tourney,
-      enabled: challongeConfig.enabled,
-    });
+  socket.on('getSyncConfig', (provider, callback) => {
+    const manager = syncProviders[provider];
+    if (!manager) return callback({ error: `Unknown sync provider "${provider}"` });
+    callback(manager.maskedConfig());
   });
 
-  socket.on('setChallongeConfig', (data, callback) => {
-    const { apiKey, tourney } = data;
-    if (typeof apiKey === 'string' && apiKey && apiKey !== '••••••••') challongeConfig.apiKey = apiKey.trim();
-    if (typeof tourney === 'string') challongeConfig.tourney = tourney.trim();
-    saveChallongeConfig();
-    if (challongeConfig.enabled) {
-      // Restart with new config
-      stopChallongeSync();
-      startChallongeSync();
-    }
+  socket.on('setSyncConfig', (data, callback) => {
+    const { provider, ...fields } = data || {};
+    const manager = syncProviders[provider];
+    if (!manager) return callback({ error: `Unknown sync provider "${provider}"` });
+    manager.applyConfigFields(fields);
+    manager.saveConfig();
+    if (manager.config.enabled) manager.restart();
     callback({ ok: true });
   });
 
-  socket.on('toggleChallonge', (enabled, callback) => {
-    challongeConfig.enabled = !!enabled;
-    saveChallongeConfig();
-    if (challongeConfig.enabled) {
-      startChallongeSync();
-    } else {
-      stopChallongeSync();
-    }
-    if (callback) callback({ ok: true, enabled: challongeConfig.enabled });
+  socket.on('toggleSync', (data, callback) => {
+    const { provider, enabled } = data || {};
+    const manager = syncProviders[provider];
+    if (!manager) return callback({ error: `Unknown sync provider "${provider}"` });
+    manager.toggle(enabled);
+    if (callback) callback({ ok: true, enabled: manager.config.enabled });
   });
 
+  // Challonge-only extra: no generic equivalent, since only Challonge's API
+  // supports listing tournaments visible to a key.
   socket.on('listChallongeTournaments', async (data, callback) => {
-    const apiKey = (data && data.apiKey && data.apiKey !== '••••••••') ? data.apiKey.trim() : challongeConfig.apiKey;
+    const manager = syncProviders.challonge;
+    const apiKey = (data && data.apiKey && data.apiKey !== '••••••••') ? data.apiKey.trim() : manager.config.apiKey;
     if (!apiKey) return callback({ error: 'No API key provided' });
     try {
       const tournaments = await listChallongeTournaments(apiKey);
@@ -1352,41 +1259,6 @@ io.on('connection', (socket) => {
     } catch (e) {
       callback({ error: e.message });
     }
-  });
-
-  // ── Podium Integration ──
-
-  socket.on('getPodiumConfig', (callback) => {
-    callback({
-      apiKey: podiumConfig.apiKey ? '••••••••' : '',
-      tournament: podiumConfig.tournament,
-      court: podiumConfig.court,
-      enabled: podiumConfig.enabled,
-    });
-  });
-
-  socket.on('setPodiumConfig', (data, callback) => {
-    const { apiKey, tournament, court } = data;
-    if (typeof apiKey === 'string' && apiKey && apiKey !== '••••••••') podiumConfig.apiKey = apiKey.trim();
-    if (typeof tournament === 'string') podiumConfig.tournament = tournament.trim();
-    if (typeof court === 'string') podiumConfig.court = court.trim();
-    savePodiumConfig();
-    if (podiumConfig.enabled) {
-      // Restart with new config
-      restartPodiumSync();
-    }
-    callback({ ok: true });
-  });
-
-  socket.on('togglePodium', (enabled, callback) => {
-    podiumConfig.enabled = !!enabled;
-    savePodiumConfig();
-    if (podiumConfig.enabled) {
-      startPodiumSync();
-    } else {
-      stopPodiumSync();
-    }
-    if (callback) callback({ ok: true, enabled: podiumConfig.enabled });
   });
 
   // ── AP Channel Management ──
@@ -1790,17 +1662,18 @@ function startSpeedifyStats() {
 
 startSpeedifyStats();
 
-// Clean up speedify/challonge/podium subprocesses on exit
+// Clean up speedify + tournament-sync subprocesses on exit
+function stopAllSyncProviders() {
+  for (const manager of Object.values(syncProviders)) manager.stop();
+}
 process.on('SIGINT', () => {
   if (speedifyProc) speedifyProc.kill();
-  if (challongeProc) challongeProc.kill();
-  if (podiumProc) podiumProc.kill();
+  stopAllSyncProviders();
   process.exit();
 });
 process.on('SIGTERM', () => {
   if (speedifyProc) speedifyProc.kill();
-  if (challongeProc) challongeProc.kill();
-  if (podiumProc) podiumProc.kill();
+  stopAllSyncProviders();
   process.exit();
 });
 

@@ -195,10 +195,10 @@ function escHtml(str) {
 
 async function loadChallongeTeams() {
     try {
-        const statusRes = await fetch('/api/challonge/status');
+        const statusRes = await fetch('/api/sync/challonge/status');
         if (!statusRes.ok) return;
 
-        const participantsRes = await fetch('/api/challonge/participants');
+        const participantsRes = await fetch('/api/sync/challonge/participants');
         if (!participantsRes.ok) return; // Challonge disabled or no data yet — keep static fallback
 
         const participants = await participantsRes.json();
