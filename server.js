@@ -344,8 +344,12 @@ app.get('/teams', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'teams.html'));
 });
 
-app.get('/bracket-viewer', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'bracket-viewer.html'));
+// Placeholder data viewers, one per sync provider — see
+// public/sync-data-viewer.html's own note on why this isn't one unified
+// bracket renderer (the three providers' bracket.json shapes don't match).
+app.get('/bracket-viewer/:provider', (req, res) => {
+  if (!syncProviders[req.params.provider]) return res.status(404).send('Unknown sync provider');
+  res.sendFile(path.join(__dirname, 'public', 'sync-data-viewer.html'));
 });
 
 // ── Generic tournament-sync REST routes ──

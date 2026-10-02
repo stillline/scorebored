@@ -95,7 +95,9 @@
         <a href="/display" target="_blank">Display</a>
         <a href="/network">Network</a>
         <a href="/teams">Teams</a>
-        <a href="/bracket-viewer" target="_blank">Bracket Viewer</a>
+        <a href="/bracket-viewer/challonge" target="_blank">Challonge Data</a>
+        <a href="/bracket-viewer/podium" target="_blank">Podium Data</a>
+        <a href="/bracket-viewer/shufflepolo" target="_blank">Shufflepolo Data</a>
             <a href="http://10.42.0.1:8000/" target="_blank">Companion</a>
     </div>
 
@@ -193,13 +195,32 @@ function escHtml(str) {
     return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-async function loadChallongeTeams() {
-    try {
-        const statusRes = await fetch('/api/sync/challonge/status');
-        if (!statusRes.ok) return;
+// Tries each sync provider in turn and renders from whichever is actually
+// enabled. Normally only one runs at a time, so first-enabled wins; if
+// somehow more than one is on, Challonge > Podium > Shufflepolo order is
+// arbitrary but deterministic.
+const SYNC_PROVIDER_LABELS = { challonge: 'Challonge', podium: 'Podium', shufflepolo: 'Shufflepolo' };
 
-        const participantsRes = await fetch('/api/sync/challonge/participants');
-        if (!participantsRes.ok) return; // Challonge disabled or no data yet — keep static fallback
+async function findActiveSyncProvider() {
+    for (const provider of Object.keys(SYNC_PROVIDER_LABELS)) {
+        try {
+            const res = await fetch(`/api/sync/${provider}/config`);
+            if (res.ok) {
+                const cfg = await res.json();
+                if (cfg.enabled) return provider;
+            }
+        } catch (e) { /* try the next provider */ }
+    }
+    return null;
+}
+
+async function loadTeams() {
+    try {
+        const provider = await findActiveSyncProvider();
+        if (!provider) return; // nothing enabled — keep static fallback
+
+        const participantsRes = await fetch(`/api/sync/${provider}/participants`);
+        if (!participantsRes.ok) return; // enabled but no data yet — keep static fallback
 
         const participants = await participantsRes.json();
         if (!Array.isArray(participants) || participants.length === 0) return;
@@ -214,13 +235,13 @@ async function loadChallongeTeams() {
                 </div>
             `).join('');
 
-        document.getElementById('source-note').textContent = 'Live from Challonge';
+        document.getElementById('source-note').textContent = `Live from ${SYNC_PROVIDER_LABELS[provider]}`;
     } catch (e) {
         // Network error, etc — keep static fallback list
     }
 }
 
-loadChallongeTeams();
+loadTeams();
 </script>
 </body>
 </html>
