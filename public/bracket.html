@@ -461,6 +461,35 @@
         <div class="challonge-status" id="challonge-status"></div>
     </div>
 
+    <div class="challonge-panel">
+        <div class="challonge-panel-header">
+            <span class="challonge-panel-title">Podium Sync</span>
+            <label class="challonge-toggle">
+                <input type="checkbox" id="podium-toggle">
+                <span class="challonge-toggle-slider"></span>
+                <span id="podium-toggle-label">Disabled</span>
+            </label>
+        </div>
+        <div class="challonge-fields">
+            <div class="challonge-row">
+                <label class="challonge-row-label" for="podium-api-key">API key</label>
+                <input type="password" id="podium-api-key" placeholder="API key">
+            </div>
+            <div class="challonge-row">
+                <label class="challonge-row-label" for="podium-tournament">Tournament slug</label>
+                <input type="text" id="podium-tournament" placeholder="Tournament slug">
+            </div>
+            <div class="challonge-row">
+                <label class="challonge-row-label" for="podium-court">Court</label>
+                <input type="text" id="podium-court" placeholder="Court name, e.g. 2">
+            </div>
+            <div class="challonge-row">
+                <button class="challonge-save-btn" id="podium-save-btn">Save</button>
+            </div>
+        </div>
+        <div class="challonge-status" id="podium-status"></div>
+    </div>
+
     <div id="matchup-list-container"></div>
 
     <div class="actions-bar">
@@ -885,6 +914,65 @@ challongeListBtn.addEventListener('click', () => {
                 </div>
             `;
         }).join('');
+    });
+});
+
+// ── Podium settings ──
+const podiumToggle = document.getElementById('podium-toggle');
+const podiumToggleLabel = document.getElementById('podium-toggle-label');
+const podiumApiKey = document.getElementById('podium-api-key');
+const podiumTournament = document.getElementById('podium-tournament');
+const podiumCourt = document.getElementById('podium-court');
+const podiumStatusEl = document.getElementById('podium-status');
+
+function updatePodiumToggleLabel() {
+    podiumToggleLabel.textContent = podiumToggle.checked ? 'Enabled' : 'Disabled';
+}
+
+function renderPodiumStatus(status) {
+    if (!status) { podiumStatusEl.textContent = ''; return; }
+    const state = status.state || 'off';
+    podiumStatusEl.className = 'challonge-status ' + (state === 'error' ? 'error' : (status.connected ? 'idle' : ''));
+    if (state === 'error') {
+        podiumStatusEl.textContent = `Error: ${status.last_error || 'unknown error'}`;
+    } else if (status.connected) {
+        podiumStatusEl.textContent = `Live — last event: ${status.last_event_at}`;
+    } else {
+        podiumStatusEl.textContent = 'Not started';
+    }
+}
+
+async function loadPodiumStatus() {
+    try {
+        const res = await fetch('/api/podium/status');
+        if (res.ok) renderPodiumStatus(await res.json());
+    } catch (e) {}
+}
+
+socket.emit('getPodiumConfig', (cfg) => {
+    podiumToggle.checked = !!cfg.enabled;
+    podiumApiKey.value = cfg.apiKey || '';
+    podiumTournament.value = cfg.tournament || '';
+    podiumCourt.value = cfg.court || '';
+    updatePodiumToggleLabel();
+});
+loadPodiumStatus();
+setInterval(loadPodiumStatus, 15000);
+
+podiumToggle.addEventListener('change', () => {
+    updatePodiumToggleLabel();
+    socket.emit('togglePodium', podiumToggle.checked, () => {
+        loadPodiumStatus();
+    });
+});
+
+document.getElementById('podium-save-btn').addEventListener('click', () => {
+    socket.emit('setPodiumConfig', {
+        apiKey: podiumApiKey.value,
+        tournament: podiumTournament.value,
+        court: podiumCourt.value,
+    }, () => {
+        loadPodiumStatus();
     });
 });
 

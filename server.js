@@ -21,6 +21,12 @@ const CHALLONGE_SCRIPT = path.join(CHALLONGE_DIR, 'challonge_sync.py');
 const CHALLONGE_STATE_DIR = path.join(CHALLONGE_DIR, 'state');
 const CHALLONGE_CONFIG_FILE = path.join(__dirname, 'challonge-config.json');
 
+// Podium integration
+const PODIUM_DIR = path.join(__dirname, 'podium_sync');
+const PODIUM_SCRIPT = path.join(PODIUM_DIR, 'podium_sync.py');
+const PODIUM_STATE_DIR = path.join(PODIUM_DIR, 'state');
+const PODIUM_CONFIG_FILE = path.join(__dirname, 'podium-config.json');
+
 // ATEM Configuration
 const ATEM_IP = process.env.ATEM_IP || '10.42.0.100'; // Default ATEM IP
 const GRAPHICS_INPUT = parseInt(process.env.GRAPHICS_INPUT || '1'); // Input number for graphics/scoreboard
@@ -44,6 +50,9 @@ const defaultGameState = {
   sidesSwapped: false,
   textColor: '#ffffff',
   backgroundColor: '#808080',
+  clock: null,
+  penalties: null,
+  timeouts: null,
   commercialBreak: {
     active: false,
     videoPath: '',
@@ -499,6 +508,160 @@ function listChallongeTournaments(apiKey) {
 loadChallongeConfig();
 if (challongeConfig.enabled) startChallongeSync();
 
+// ── Podium Integration ──
+// Standalone, toggleable, read-only against Podium (it only subscribes,
+// never sends score/clock changes back). Unlike Challonge, Podium pushes
+// live game state (score/clock/penalties) rather than being polled, so
+// podium_sync.py posts each update to POST /api/podium/push below, which
+// merges it into gameState and broadcasts it over socket.io just like a
+// manual scoreboard edit would.
+
+let podiumProc = null;
+let podiumConfig = { apiKey: '', tournament: '', court: '', enabled: false };
+
+function loadPodiumConfig() {
+  try {
+    if (fs.existsSync(PODIUM_CONFIG_FILE)) {
+      const saved = JSON.parse(fs.readFileSync(PODIUM_CONFIG_FILE, 'utf8'));
+      podiumConfig = { ...podiumConfig, ...saved };
+    }
+  } catch (error) {
+    console.error('Error loading Podium config:', error);
+  }
+}
+
+function savePodiumConfig() {
+  try {
+    fs.writeFileSync(PODIUM_CONFIG_FILE, JSON.stringify(podiumConfig, null, 2));
+  } catch (error) {
+    console.error('Error saving Podium config:', error);
+  }
+}
+
+function readPodiumStateFile(filename) {
+  try {
+    const filePath = path.join(PODIUM_STATE_DIR, filename);
+    if (!fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    console.error(`Error reading podium_sync/state/${filename}:`, error);
+    return null;
+  }
+}
+
+// .kill() only sends SIGTERM — it doesn't wait for the process to actually
+// exit. startPodiumSync() must not spawn a replacement until the previous
+// process's 'close' event has actually fired, or a stop()+start() pair (as
+// setPodiumConfig does) leaks an orphaned subprocess still holding the old
+// subscription. restartPending defers the respawn to the close handler
+// instead of racing it.
+let podiumRestartPending = false;
+
+function startPodiumSync() {
+  if (podiumProc) return;
+  if (!podiumConfig.apiKey || !podiumConfig.tournament || !podiumConfig.court) {
+    console.log('Podium: cannot start, missing apiKey, tournament or court');
+    return;
+  }
+
+  console.log(`Podium: starting sync for tournament "${podiumConfig.tournament}" court "${podiumConfig.court}"`);
+  podiumProc = spawn('python3', [PODIUM_SCRIPT], {
+    cwd: PODIUM_DIR,
+    env: {
+      ...process.env,
+      PODIUM_API_KEY: podiumConfig.apiKey,
+      PODIUM_TOURNAMENT: podiumConfig.tournament,
+      PODIUM_COURT: podiumConfig.court,
+      PUSH_URL: `http://localhost:${PORT}/api/podium/push`,
+    },
+  });
+
+  podiumProc.stdout.on('data', (chunk) => {
+    console.log(`[podium] ${chunk.toString().trim()}`);
+  });
+  podiumProc.stderr.on('data', (chunk) => {
+    console.error(`[podium] ${chunk.toString().trim()}`);
+  });
+  podiumProc.on('close', (code) => {
+    console.log(`Podium sync process exited with code ${code}`);
+    podiumProc = null;
+    gameState.clock = null;
+    gameState.penalties = null;
+    gameState.timeouts = null;
+    io.emit('gameUpdate', gameState);
+    if (podiumRestartPending) {
+      podiumRestartPending = false;
+      startPodiumSync();
+    }
+  });
+  podiumProc.on('error', (err) => {
+    console.error('Podium sync spawn error:', err.message);
+    podiumProc = null;
+  });
+}
+
+function stopPodiumSync(callback) {
+  if (!podiumProc) {
+    if (callback) callback();
+    return;
+  }
+  console.log('Podium: stopping sync');
+  podiumProc.once('close', () => { if (callback) callback(); });
+  podiumProc.kill();
+  gameState.clock = null;
+  gameState.penalties = null;
+  gameState.timeouts = null;
+  saveGameState();
+  io.emit('gameUpdate', gameState);
+}
+
+function restartPodiumSync() {
+  if (podiumProc) {
+    podiumRestartPending = true;
+    podiumProc.kill();
+  } else {
+    startPodiumSync();
+  }
+}
+
+// Applies a live snapshot from podium_sync.py to gameState, honoring
+// whatever sidesSwapped is currently set to — same left/right mapping
+// loadMatchupByIndex uses, so the director's swap control stays authoritative
+// regardless of which physical side Podium calls "home".
+function applyPodiumSnapshot(snapshot) {
+  gameState.clock = snapshot.clock || null;
+
+  if (!snapshot.has_game) {
+    gameState.penalties = null;
+    gameState.timeouts = null;
+    return;
+  }
+
+  const homePenalties = (snapshot.penalties && snapshot.penalties.home) || [];
+  const awayPenalties = (snapshot.penalties && snapshot.penalties.away) || [];
+  const homeTimeouts = snapshot.home.timeouts_left;
+  const awayTimeouts = snapshot.away.timeouts_left;
+
+  if (gameState.sidesSwapped) {
+    gameState.leftTeam = snapshot.away.name;
+    gameState.rightTeam = snapshot.home.name;
+    gameState.leftScore = snapshot.away.score;
+    gameState.rightScore = snapshot.home.score;
+    gameState.penalties = { left: awayPenalties, right: homePenalties };
+    gameState.timeouts = { left: awayTimeouts, right: homeTimeouts };
+  } else {
+    gameState.leftTeam = snapshot.home.name;
+    gameState.rightTeam = snapshot.away.name;
+    gameState.leftScore = snapshot.home.score;
+    gameState.rightScore = snapshot.away.score;
+    gameState.penalties = { left: homePenalties, right: awayPenalties };
+    gameState.timeouts = { left: homeTimeouts, right: awayTimeouts };
+  }
+}
+
+loadPodiumConfig();
+if (podiumConfig.enabled) startPodiumSync();
+
 app.use(express.static('public'));
 
 app.get('/', (req, res) => {
@@ -531,6 +694,45 @@ app.get('/teams', (req, res) => {
 
 app.get('/bracket-viewer', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'bracket-viewer.html'));
+});
+
+app.get('/api/podium/config', (req, res) => {
+  res.json({
+    apiKey: podiumConfig.apiKey ? '••••••••' : '',
+    tournament: podiumConfig.tournament,
+    court: podiumConfig.court,
+    enabled: podiumConfig.enabled,
+  });
+});
+
+app.get('/api/podium/status', (req, res) => {
+  res.json(readPodiumStateFile('status.json') || { state: podiumConfig.enabled ? 'starting' : 'off', connected: false, last_event_at: null, last_error: null });
+});
+
+app.get('/api/podium/participants', (req, res) => {
+  const data = readPodiumStateFile('participants.json');
+  if (!data) return res.status(404).json({ error: 'No Podium participant data yet' });
+  res.json(data);
+});
+
+app.get('/api/podium/bracket', (req, res) => {
+  const data = readPodiumStateFile('bracket.json');
+  if (!data) return res.status(404).json({ error: 'No Podium bracket data yet' });
+  res.json(data);
+});
+
+// podium_sync.py posts here on every live-stream event. No auth beyond
+// binding to localhost — this is a same-host IPC channel, not a public API.
+app.post('/api/podium/push', express.json(), (req, res) => {
+  try {
+    applyPodiumSnapshot(req.body);
+    saveGameState();
+    io.emit('gameUpdate', gameState);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Error applying Podium push:', error);
+    res.status(400).json({ error: error.message });
+  }
 });
 
 app.get('/api/challonge/config', (req, res) => {
@@ -1161,6 +1363,41 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ── Podium Integration ──
+
+  socket.on('getPodiumConfig', (callback) => {
+    callback({
+      apiKey: podiumConfig.apiKey ? '••••••••' : '',
+      tournament: podiumConfig.tournament,
+      court: podiumConfig.court,
+      enabled: podiumConfig.enabled,
+    });
+  });
+
+  socket.on('setPodiumConfig', (data, callback) => {
+    const { apiKey, tournament, court } = data;
+    if (typeof apiKey === 'string' && apiKey && apiKey !== '••••••••') podiumConfig.apiKey = apiKey.trim();
+    if (typeof tournament === 'string') podiumConfig.tournament = tournament.trim();
+    if (typeof court === 'string') podiumConfig.court = court.trim();
+    savePodiumConfig();
+    if (podiumConfig.enabled) {
+      // Restart with new config
+      restartPodiumSync();
+    }
+    callback({ ok: true });
+  });
+
+  socket.on('togglePodium', (enabled, callback) => {
+    podiumConfig.enabled = !!enabled;
+    savePodiumConfig();
+    if (podiumConfig.enabled) {
+      startPodiumSync();
+    } else {
+      stopPodiumSync();
+    }
+    if (callback) callback({ ok: true, enabled: podiumConfig.enabled });
+  });
+
   // ── AP Channel Management ──
 
   socket.on('getApConfig', (callback) => {
@@ -1562,15 +1799,17 @@ function startSpeedifyStats() {
 
 startSpeedifyStats();
 
-// Clean up speedify/challonge subprocesses on exit
+// Clean up speedify/challonge/podium subprocesses on exit
 process.on('SIGINT', () => {
   if (speedifyProc) speedifyProc.kill();
   if (challongeProc) challongeProc.kill();
+  if (podiumProc) podiumProc.kill();
   process.exit();
 });
 process.on('SIGTERM', () => {
   if (speedifyProc) speedifyProc.kill();
   if (challongeProc) challongeProc.kill();
+  if (podiumProc) podiumProc.kill();
   process.exit();
 });
 

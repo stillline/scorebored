@@ -1,0 +1,42 @@
+[build-system]
+# 77+ for PEP 639 SPDX license metadata (`license` / `license-files` below).
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "libpodium"
+version = "0.0.2"
+description = "Python client for the Podium live stream API — live bike polo tournament data for broadcast graphics"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["podium", "bike polo", "websocket", "broadcast", "scoreboard"]
+
+# Deliberately empty, and it should stay that way: the library is standard
+# library only so it can be copied onto a Raspberry Pi that has no network,
+# no pip and no build step. Packaging is a convenience on top of that, not a
+# replacement for it.
+dependencies = []
+
+classifiers = [
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Multimedia :: Video",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/binaryseed/libpodium"
+Source = "https://github.com/binaryseed/libpodium"
+
+[tool.setuptools]
+packages = ["podium"]
+
+[tool.setuptools.package-data]
+podium = ["py.typed"]

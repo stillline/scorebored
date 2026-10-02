@@ -1,304 +1,382 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scoreboard Display</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scoreboard Display</title>
+<style>
+/* ============================================================
+   LUMA KEY CONTRACT
+   #000000 is the only transparent value and is used for the
+   stage background only. Every visible pixel sits at or above
+   --floor. The badge "black" is --floor, not black.
+   ============================================================ */
+:root{
+  --floor:#1A1E24;
+  --shell-2:#2A3038;
+  --crest:#666C74;
+  --cell-hi:#7B828A;
+  --cell-lo:#666D75;
+  --bar-hi:#E6E8EB;
+  --bar-lo:#CBCFD4;
+  --bar-edge:#A7ADB5;
+  --white:#FFFFFF;
+  --face:"Helvetica Neue",Helvetica,Arial,"SF Pro Display",system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#000;overflow:hidden}
+body{font-family:var(--face)}
+#stage{position:fixed;inset:0;background:#000;overflow:hidden}
 
-        body {
-            background: #000000;
-            font-family: 'Arial', sans-serif;
-            height: 100vh;
-            display: flex;
-            align-items: flex-end;
-            justify-content: center;
-            padding-bottom: 80px;
-        }
+/* the scorebug renders at native 1854x576 art size, then scaled to 65% and
+   docked to the bottom center of the screen */
+#bugwrap{position:absolute;left:50%;bottom:24px;width:1854px;margin-left:-927px;
+  transform:scale(0.325);transform-origin:bottom center}
+svg{display:block;width:100%;height:auto}
 
-        .scoreboard {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: linear-gradient(to bottom, #909090 0%, #808080 50%, #707070 100%);
-            padding: 6px 20px;
-            border-radius: 8px;
-            height: 50px;
-            box-shadow: inset 0 4px 8px rgba(255,255,255,0.45), inset 0 -4px 8px rgba(0,0,0,0.75);
-            transform: scale(0.7) translateY(50px);
-            transform-origin: center top;
-        }
+.name{font-family:var(--face);font-weight:700;fill:var(--floor)}
+.score{font-family:var(--face);font-weight:700;fill:var(--white);font-size:108px;text-anchor:middle}
+.clock{font-family:var(--face);font-weight:700;font-size:78px;text-anchor:middle;
+  fill:var(--white);stroke:var(--floor);stroke-width:9px;paint-order:stroke fill;
+  stroke-linejoin:round}
+.clock.stopped{fill:#B9C0C8}
+.chiptext{font-family:var(--face);font-weight:700;font-size:30px;fill:var(--white)}
 
-        .team-name {
-            background: transparent;
-            color: #ffffff;
-            padding: 16px 40px;
-            border-radius: 12px;
-            font-size: 19px;
-            font-weight: 900;
-            min-width: 300px;
-            max-width: 300px;
-            text-align: center;
-            overflow: hidden;
-            white-space: nowrap;
-            text-overflow: ellipsis;
-        }
+/* Commercial Break Video Overlay */
+.commercial-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #000000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
 
-        .score {
-            color: #ffffff;
-            font-size: 64.125px;
-            font-weight: 900;
-            width: 100px;
-            height: 80px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 16px;
-            background: linear-gradient(to bottom, #388E3C 0%, #2E7D32 50%, #256027 100%);
-            box-shadow: inset 0 4px 8px rgba(255,255,255,0.45), inset 0 -4px 8px rgba(0,0,0,0.75);
-        }
+.commercial-overlay.active {
+    display: flex;
+}
 
-        /* Commercial Break Video Overlay */
-        .commercial-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: #000000;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-        }
+.commercial-video {
+    width: 100vw;
+    height: 100vh;
+    object-fit: contain;
+    background: #000000;
+    pointer-events: none;
+}
 
-        .commercial-overlay.active {
-            display: flex;
-        }
-
-        .commercial-video {
-            width: 100vw;
-            height: 100vh;
-            object-fit: contain;
-            background: #000000;
-            pointer-events: none;
-        }
-
-        .commercial-video::-webkit-media-controls {
-            display: none !important;
-        }
-
-        .commercial-video::-webkit-media-controls-panel {
-            display: none !important;
-        }
-
-        .commercial-video::-webkit-media-controls-play-button {
-            display: none !important;
-        }
-
-        .commercial-video::-webkit-media-controls-start-playback-button {
-            display: none !important;
-        }
-
-        .commercial-video::-webkit-media-controls-volume-slider {
-            display: none !important;
-        }
-
-        .commercial-video::-webkit-media-controls-mute-button {
-            display: none !important;
-        }
-
-        .commercial-video::-webkit-media-controls-timeline {
-            display: none !important;
-        }
-
-        .commercial-video::-webkit-media-controls-fullscreen-button {
-            display: none !important;
-        }
-    </style>
+.commercial-video::-webkit-media-controls,
+.commercial-video::-webkit-media-controls-panel,
+.commercial-video::-webkit-media-controls-play-button,
+.commercial-video::-webkit-media-controls-start-playback-button,
+.commercial-video::-webkit-media-controls-volume-slider,
+.commercial-video::-webkit-media-controls-mute-button,
+.commercial-video::-webkit-media-controls-timeline,
+.commercial-video::-webkit-media-controls-fullscreen-button {
+    display: none !important;
+}
+</style>
 </head>
 <body>
-    <div class="scoreboard">
-        <div class="team-name" id="leftTeam">Team 1</div>
-        <div class="score" id="leftScore">0</div>
-        <div class="score" id="rightScore">0</div>
-        <div class="team-name" id="rightTeam">Team 2</div>
-    </div>
 
-    <!-- Commercial Break Video Overlay -->
-    <div class="commercial-overlay" id="commercialOverlay">
-        <video class="commercial-video" id="commercialVideo" autoplay playsinline disablepictureinpicture controlslist="nodownload nofullscreen noremoteplayback">
-            Your browser does not support the video tag.
-        </video>
-    </div>
+<div id="stage">
+  <div id="bugwrap">
+    <svg id="bug" viewBox="0 0 1854 576" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="gBar" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="var(--bar-hi)"/><stop offset="1" stop-color="var(--bar-lo)"/>
+        </linearGradient>
+        <linearGradient id="gCell" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="var(--cell-hi)"/><stop offset="1" stop-color="var(--cell-lo)"/>
+        </linearGradient>
+      </defs>
 
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-        const socket = io();
-        
-        const leftTeamEl = document.getElementById('leftTeam');
-        const rightTeamEl = document.getElementById('rightTeam');
-        const leftScoreEl = document.getElementById('leftScore');
-        const rightScoreEl = document.getElementById('rightScore');
-        const commercialOverlayEl = document.getElementById('commercialOverlay');
-        const commercialVideoEl = document.getElementById('commercialVideo');
-        
-        function hexToRgba(hex, alpha = 1.0) {
-            const r = parseInt(hex.slice(1, 3), 16);
-            const g = parseInt(hex.slice(3, 5), 16);
-            const b = parseInt(hex.slice(5, 7), 16);
-            return `rgb(${r}, ${g}, ${b})`;
-        }
+      <!-- name bar -->
+      <rect x="35" y="280" width="1784" height="112" fill="url(#gBar)" stroke="var(--bar-edge)" stroke-width="4"/>
+      <text id="nameA" class="name" x="110" y="352" text-anchor="start">Team 1</text>
+      <text id="nameB" class="name" x="1744" y="352" text-anchor="end">Team 2</text>
+      <g id="penA"></g>
+      <g id="penB"></g>
 
-        function hexToShinyGradient(hex) {
-            if (!hex || !hex.startsWith('#') || hex.length < 7) return hex;
-            const r = parseInt(hex.slice(1, 3), 16);
-            const g = parseInt(hex.slice(3, 5), 16);
-            const b = parseInt(hex.slice(5, 7), 16);
-            const light = `rgb(${Math.min(255,r+30)}, ${Math.min(255,g+30)}, ${Math.min(255,b+30)})`;
-            const dark  = `rgb(${Math.max(0,r-20)}, ${Math.max(0,g-20)}, ${Math.max(0,b-20)})`;
-            return `linear-gradient(to bottom, ${light} 0%, ${hex} 50%, ${dark} 100%)`;
-        }
-        
-        function adjustTextSize(element) {
-            const maxWidth = 220; // Account for padding
-            const baseFontSize = 32;
-            const minFontSize = 16;
-            
-            // Create a temporary element to measure text width
-            const temp = document.createElement('span');
-            temp.style.visibility = 'hidden';
-            temp.style.position = 'absolute';
-            temp.style.fontWeight = 'bold';
-            temp.style.fontSize = baseFontSize + 'px';
-            temp.textContent = element.textContent;
-            document.body.appendChild(temp);
-            
-            let fontSize = baseFontSize;
-            while (temp.offsetWidth > maxWidth && fontSize > minFontSize) {
-                fontSize -= 2;
-                temp.style.fontSize = fontSize + 'px';
-            }
-            
-            element.style.fontSize = fontSize + 'px';
-            document.body.removeChild(temp);
-        }
+      <!-- badge shell: shoulders + plinth, same fill so the union reads solid.
+           Top corners chamfer at 45 deg (matching the score cells' own
+           diagonal cut into the crest) so the shell reads as a shield, not
+           a plain rectangle. -->
+      <path d="M672 257 L717 212 H1137 L1182 257 V438 H672 Z" fill="var(--floor)"/>
+      <path d="M737 430 H1117 V500 L927 545 L737 500 Z" fill="var(--floor)"/>
 
-        function startCommercialBreak(videoPath) {
-            console.log('Starting commercial break with video:', videoPath);
+      <!-- score cells -->
+      <path d="M745 285 L790 240 H920 V415 H745 Z" fill="url(#gCell)"/>
+      <path d="M1109 285 L1064 240 H934 V415 H1109 Z" fill="url(#gCell)"/>
+      <text id="scoreA" class="score" x="833" y="372">0</text>
+      <text id="scoreB" class="score" x="1021" y="372">0</text>
 
-            // Configure video element for clean playback
-            commercialVideoEl.src = videoPath;
-            commercialVideoEl.muted = false; // Enable audio
-            commercialVideoEl.controls = false; // No controls
-            commercialVideoEl.style.pointerEvents = 'none'; // Disable all interactions
+      <!-- crest -->
+      <path d="M827 136 H1027 L1085 200 V265 L927 352 L769 265 V200 Z" fill="var(--floor)"/>
+      <path d="M845 158 H1009 L1063 214 V258 L927 326 L791 258 V214 Z" fill="var(--crest)"/>
+      <g fill="var(--white)">
+        <g transform="rotate(157 927 213)">
+          <rect x="832" y="207" width="190" height="12" rx="6"/>
+          <rect x="1015" y="189" width="18" height="48" rx="6"/>
+        </g>
+        <g transform="rotate(23 927 213)">
+          <rect x="832" y="207" width="190" height="12" rx="6"/>
+          <rect x="1015" y="189" width="18" height="48" rx="6"/>
+        </g>
+        <circle cx="927" cy="282" r="18"/>
+      </g>
 
-            commercialOverlayEl.classList.add('active');
-            isCommercialActive = true;
+      <!-- timeout pips -->
+      <g id="pips"></g>
 
-            // Hide the video when it ends and return to scoreboard
-            commercialVideoEl.addEventListener('ended', () => {
-                stopCommercialBreak(true); // Video ended naturally, notify server
-            }, { once: true });
+      <text id="clock" class="clock" x="927" y="112">12:00</text>
+    </svg>
+  </div>
+</div>
 
-            // Handle video errors
-            commercialVideoEl.addEventListener('error', (e) => {
-                console.error('Video error:', e);
-                stopCommercialBreak(true); // Video error, notify server
-            }, { once: true });
+<!-- Commercial Break Video Overlay -->
+<div class="commercial-overlay" id="commercialOverlay">
+    <video class="commercial-video" id="commercialVideo" autoplay playsinline disablepictureinpicture controlslist="nodownload nofullscreen noremoteplayback">
+        Your browser does not support the video tag.
+    </video>
+</div>
 
-            // Play the video (required for audio to work)
-            commercialVideoEl.play().catch(e => {
-                console.error('Video play error:', e);
-            });
-        }
+<script src="/socket.io/socket.io.js"></script>
+<script>
+"use strict";
+const NS = "http://www.w3.org/2000/svg";
+const socket = io();
 
-        let isCommercialActive = false;
+/* ---- layout constants (from the scorebug reference; positional only) ---- */
+const L = {
+  barL: 35, barR: 1819, pad: 75,
+  badgeL: 672, badgeR: 1182,
+  nameMax: 80, nameMin: 43,
+  penGap: 24, chipH: 52, chipPadX: 16, chipGap: 10,
+  pip: { w: 34, h: 34, y: 448, xA: [800, 840], xB: [980, 1020] }
+};
 
-        function stopCommercialBreak(notifyServer = true) {
-            console.log('Stopping commercial break, notifyServer:', notifyServer);
-            commercialOverlayEl.classList.remove('active');
-            commercialVideoEl.src = '';
-            commercialVideoEl.pause();
-            document.querySelector('.scoreboard').style.visibility = 'visible';
+const el = id => document.getElementById(id);
+const D = { clock: el("clock"), nameA: el("nameA"), nameB: el("nameB"),
+            scoreA: el("scoreA"), scoreB: el("scoreB"),
+            penA: el("penA"), penB: el("penB"), pips: el("pips") };
+const memo = { name:[null,null], score:[null,null], pen:[null,null], to:[null,null] };
 
-            // Only notify server if we're the one ending the commercial (video ended naturally)
-            // Don't notify if we're responding to a server state update
-            if (notifyServer && isCommercialActive) {
-                console.log('Notifying server that commercial break ended');
-                socket.emit('stopCommercialBreak');
-            }
-            isCommercialActive = false;
-        }
+/* Shrink to fit, then compress letterspacing as a last resort, so a long
+   team name can never run under the badge. */
+function fitName(node, text, maxWidth){
+  node.removeAttribute("textLength");
+  node.setAttribute("font-size", L.nameMax);
+  node.textContent = text;
+  let size = L.nameMax;
+  while(node.getComputedTextLength() > maxWidth && size > L.nameMin){
+    size -= 1;
+    node.setAttribute("font-size", size);
+  }
+  if(node.getComputedTextLength() > maxWidth){
+    node.setAttribute("textLength", maxWidth);
+    node.setAttribute("lengthAdjust", "spacingAndGlyphs");
+  }
+}
 
-        function updateDisplay(gameState) {
-            console.log('Updating display with gameState:', gameState);
+/* penalties: [{player, severity, remaining_seconds, frozen}, ...] per side */
+function fmtPenTime(p){
+  if(p.frozen) return "--";
+  const t = Math.max(0, Math.ceil(p.remaining_seconds));
+  return Math.floor(t/60) + ":" + String(t%60).padStart(2,"0");
+}
 
-            // Handle commercial break state
-            if (gameState.commercialBreak) {
-                if (gameState.commercialBreak.active && gameState.commercialBreak.videoPath) {
-                    // Only start commercial if we're not already playing this video
-                    if (!isCommercialActive) {
-                        console.log('🎬 Starting new commercial break');
-                        startCommercialBreak(gameState.commercialBreak.videoPath);
-                    }
-                } else if (!gameState.commercialBreak.active && isCommercialActive) {
-                    // Only stop if we're currently playing
-                    console.log('🎬 Stopping commercial break - server ended it');
-                    stopCommercialBreak(false); // Server told us to stop, don't notify server again
-                }
-            }
+function buildPens(i, penalties){
+  const g = i ? D.penB : D.penA;
+  const live = (penalties || []).slice(-2);
+  while(g.firstChild) g.removeChild(g.firstChild);
+  if(!live.length) return 0;
 
-            leftTeamEl.textContent = gameState.leftTeam;
-            rightTeamEl.textContent = gameState.rightTeam;
-            leftScoreEl.textContent = gameState.leftScore;
-            rightScoreEl.textContent = gameState.rightScore;
+  // build right-to-left for side A (chips hug the badge), left-to-right for B
+  let cursor = i ? L.badgeR + L.penGap : L.badgeL - L.penGap;
+  live.forEach((p, idx) => {
+    const who = p.player || p.severity || "PEN";
+    const label = who + "  " + fmtPenTime(p);
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("class", "chiptext");
+    t.setAttribute("y", 336 + 11);
+    t.textContent = label;
+    g.appendChild(t);
+    const w = t.getComputedTextLength() + L.chipPadX * 2;
+    const x = i ? cursor : cursor - w;
 
-            // Adjust text size for team names
-            adjustTextSize(leftTeamEl);
-            adjustTextSize(rightTeamEl);
+    const r = document.createElementNS(NS, "rect");
+    r.setAttribute("x", x); r.setAttribute("y", 336 - L.chipH/2);
+    r.setAttribute("width", w); r.setAttribute("height", L.chipH);
+    r.setAttribute("rx", 8); r.setAttribute("fill", "var(--floor)");
+    g.insertBefore(r, t);
+    t.setAttribute("x", x + L.chipPadX);
 
-            if (gameState.leftColor) {
-                leftScoreEl.style.background = hexToShinyGradient(gameState.leftColor);
-            }
-            if (gameState.rightColor) {
-                rightScoreEl.style.background = hexToShinyGradient(gameState.rightColor);
-            }
+    cursor = i ? x + w + L.chipGap : x - L.chipGap;
+  });
+  return Math.abs(cursor - (i ? L.badgeR + L.penGap : L.badgeL - L.penGap));
+}
 
-            if (gameState.textColor) {
-                leftTeamEl.style.setProperty('color', gameState.textColor, 'important');
-                rightTeamEl.style.setProperty('color', gameState.textColor, 'important');
-            }
-            if (gameState.leftScoreTextColor) {
-                leftScoreEl.style.setProperty('color', gameState.leftScoreTextColor, 'important');
-            }
-            if (gameState.rightScoreTextColor) {
-                rightScoreEl.style.setProperty('color', gameState.rightScoreTextColor, 'important');
-            }
+function renderPips(leftTO, rightTO){
+  const g = D.pips;
+  const key = (leftTO ?? 0) + "/" + (rightTO ?? 0);
+  if(g.dataset.k === key) return;
+  g.dataset.k = key;
+  while(g.firstChild) g.removeChild(g.firstChild);
+  [leftTO ?? 0, rightTO ?? 0].forEach((to, i) => {
+    const xs = i ? L.pip.xB : L.pip.xA;
+    for(let n = 0; n < 2; n++){
+      const r = document.createElementNS(NS, "rect");
+      r.setAttribute("x", xs[n]); r.setAttribute("y", L.pip.y);
+      r.setAttribute("width", L.pip.w); r.setAttribute("height", L.pip.h);
+      r.setAttribute("rx", 3);
+      r.setAttribute("fill", n < to ? "var(--bar-hi)" : "var(--shell-2)");
+      g.appendChild(r);
+    }
+  });
+}
 
-            console.log('Applying background color:', gameState.backgroundColor);
-            if (gameState.backgroundColor) {
-                const scoreboard = document.querySelector('.scoreboard');
-                console.log('Scoreboard element:', scoreboard);
-                scoreboard.style.setProperty('background', hexToShinyGradient(gameState.backgroundColor), 'important');
-            }
-        }
+// Podium only pushes the clock on discrete events (goal, penalty,
+// start/stop), not every second — podium_sync.py also re-pushes on a
+// 100ms ticker whenever the clock is running so a page reload is never
+// far stale, but interpolate locally too as a smoothing/resilience layer
+// in case a push is delayed or dropped. Anchored to THIS device's own
+// Date.now() at receipt (not a timestamp from the Pi) so cross-device
+// clock skew can't show up as drift.
+let currentClock = null;
 
-        socket.on('gameUpdate', updateDisplay);
+function renderClockNow(){
+  const clock = currentClock;
+  if(!clock){
+    D.clock.textContent = "";
+    return;
+  }
 
-        // Go black immediately when break is starting, before ATEM switches to this input
-        socket.on('displayBlack', function() {
-            document.querySelector('.scoreboard').style.visibility = 'hidden';
-        });
+  let secs = clock.remaining_seconds;
+  if(clock.running){
+    const elapsedSeconds = (Date.now() - clock.localAnchorAt) / 1000;
+    if(clock.phase === "overtime"){
+      secs = Math.floor(clock.remaining_seconds + elapsedSeconds);
+    } else {
+      secs = Math.max(Math.ceil(clock.remaining_seconds - elapsedSeconds), 0);
+    }
+  }
 
-        socket.on('reloadPage', function() {
-            window.location.reload();
-        });
-    </script>
+  const mm = Math.floor(secs / 60);
+  const ss = String(secs % 60).padStart(2, "0");
+  const formatted = mm + ":" + ss;
+  D.clock.textContent = clock.phase === "overtime" ? "+" + formatted : formatted;
+  D.clock.classList.toggle("stopped", !clock.running);
+}
+
+setInterval(renderClockNow, 250);
+
+function renderDisplay(gameState){
+  console.log('Updating display with gameState:', gameState);
+
+  // Handle commercial break state
+  if (gameState.commercialBreak) {
+    if (gameState.commercialBreak.active && gameState.commercialBreak.videoPath) {
+      if (!isCommercialActive) {
+        startCommercialBreak(gameState.commercialBreak.videoPath);
+      }
+    } else if (!gameState.commercialBreak.active && isCommercialActive) {
+      stopCommercialBreak(false);
+    }
+  }
+
+  currentClock = gameState.clock ? { ...gameState.clock, localAnchorAt: Date.now() } : null;
+  renderClockNow();
+
+  const penalties = gameState.penalties || {};
+  const timeouts = gameState.timeouts || {};
+
+  [0, 1].forEach(i => {
+    const name = i ? gameState.rightTeam : gameState.leftTeam;
+    const score = i ? gameState.rightScore : gameState.leftScore;
+    const sidePenalties = i ? penalties.right : penalties.left;
+    const penKey = (sidePenalties || []).map(p => (p.player||'') + p.remaining_seconds).join(",");
+
+    let penWidth = null;
+    if(memo.pen[i] !== penKey){
+      penWidth = buildPens(i, sidePenalties);
+      memo.pen[i] = penKey;
+      memo.name[i] = null; // name width budget changed, refit
+    }
+
+    if(memo.name[i] !== name){
+      const used = penWidth === null ? 0 : penWidth;
+      const inner = (i ? L.badgeR + L.penGap + used : L.badgeL - L.penGap - used);
+      const max = i ? (L.barR - L.pad) - (inner + L.penGap)
+                    : (inner - L.penGap) - (L.barL + L.pad);
+      fitName(i ? D.nameB : D.nameA, name || '', Math.max(160, max));
+      memo.name[i] = name;
+    }
+    if(memo.score[i] !== score){
+      (i ? D.scoreB : D.scoreA).textContent = score ?? 0;
+      memo.score[i] = score;
+    }
+  });
+
+  renderPips(timeouts.left, timeouts.right);
+}
+
+/* ---- commercial break (unchanged from prior display.html) ---- */
+const commercialOverlayEl = document.getElementById('commercialOverlay');
+const commercialVideoEl = document.getElementById('commercialVideo');
+let isCommercialActive = false;
+
+function startCommercialBreak(videoPath) {
+    console.log('Starting commercial break with video:', videoPath);
+    commercialVideoEl.src = videoPath;
+    commercialVideoEl.muted = false;
+    commercialVideoEl.controls = false;
+    commercialVideoEl.style.pointerEvents = 'none';
+
+    commercialOverlayEl.classList.add('active');
+    isCommercialActive = true;
+
+    commercialVideoEl.addEventListener('ended', () => {
+        stopCommercialBreak(true);
+    }, { once: true });
+
+    commercialVideoEl.addEventListener('error', (e) => {
+        console.error('Video error:', e);
+        stopCommercialBreak(true);
+    }, { once: true });
+
+    commercialVideoEl.play().catch(e => {
+        console.error('Video play error:', e);
+    });
+}
+
+function stopCommercialBreak(notifyServer = true) {
+    console.log('Stopping commercial break, notifyServer:', notifyServer);
+    commercialOverlayEl.classList.remove('active');
+    commercialVideoEl.src = '';
+    commercialVideoEl.pause();
+    document.getElementById('stage').style.visibility = 'visible';
+
+    if (notifyServer && isCommercialActive) {
+        console.log('Notifying server that commercial break ended');
+        socket.emit('stopCommercialBreak');
+    }
+    isCommercialActive = false;
+}
+
+socket.on('gameUpdate', renderDisplay);
+
+// Go black immediately when break is starting, before ATEM switches to this input
+socket.on('displayBlack', function() {
+    document.getElementById('stage').style.visibility = 'hidden';
+});
+
+socket.on('reloadPage', function() {
+    window.location.reload();
+});
+</script>
 </body>
 </html>

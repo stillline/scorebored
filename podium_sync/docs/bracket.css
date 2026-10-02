@@ -1,0 +1,126 @@
+/* Starter stylesheet for the Podium bracket HTML (`bracket` op).
+   Structure: .pdm-bracket > .pdm-round > .pdm-matches > .pdm-match > .pdm-side
+   Override anything; the markup carries no inline style. */
+
+.pdm-bracket {
+  --pdm-gap: 28px;
+  --pdm-box-w: 190px;
+  --pdm-line: rgba(255, 255, 255, 0.35);
+  --pdm-fg: #fff;
+  --pdm-bg: rgba(0, 0, 0, 0.55);
+  --pdm-accent: #ffd400;
+  display: flex;
+  align-items: stretch;
+  gap: var(--pdm-gap);
+  font: 16px/1.2 system-ui, sans-serif;
+  color: var(--pdm-fg);
+}
+
+.pdm-round {
+  display: flex;
+  flex-direction: column;
+  width: var(--pdm-box-w);
+}
+
+.pdm-round-name {
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.7em;
+  opacity: 0.8;
+  margin-bottom: 8px;
+}
+
+/* Each column spreads its boxes evenly, which lines later rounds up with the
+   pairs that feed them. Padding slots stay in the grid, invisible. */
+.pdm-matches {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  gap: 12px;
+}
+
+.pdm-match {
+  position: relative;
+  background: var(--pdm-bg);
+  border: 1px solid var(--pdm-line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.pdm-match-empty {
+  visibility: hidden;
+}
+
+.pdm-match-title {
+  font-size: 0.65em;
+  opacity: 0.7;
+  padding: 3px 8px 0;
+}
+
+.pdm-side {
+  display: grid;
+  grid-template-columns: 1.6em 1fr 2em;
+  align-items: center;
+  padding: 4px 8px;
+}
+
+.pdm-side + .pdm-side {
+  border-top: 1px solid var(--pdm-line);
+}
+
+.pdm-seed {
+  font-size: 0.7em;
+  opacity: 0.7;
+}
+
+.pdm-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdm-score {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.pdm-side[data-tbd="true"] .pdm-name {
+  font-style: italic;
+  opacity: 0.65;
+}
+
+.pdm-side[data-winner="true"] {
+  color: var(--pdm-accent);
+}
+
+.pdm-match[data-status="in_progress"] {
+  border-color: var(--pdm-accent);
+  box-shadow: 0 0 0 2px var(--pdm-accent);
+}
+
+.pdm-match[data-status="completed"] .pdm-side[data-winner="false"] {
+  opacity: 0.55;
+}
+
+/* Connectors: a stub out of every box's right edge, and a stub into every box
+   from the second column on. Pairs feeding one box meet at the gap's midpoint. */
+.pdm-round:not(:last-child) .pdm-match:not(.pdm-match-empty)::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: calc(-1 * var(--pdm-gap) / 2);
+  width: calc(var(--pdm-gap) / 2);
+  border-top: 1px solid var(--pdm-line);
+}
+
+.pdm-round:not(:first-child) .pdm-match:not(.pdm-match-empty)::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: calc(-1 * var(--pdm-gap) / 2);
+  width: calc(var(--pdm-gap) / 2);
+  border-top: 1px solid var(--pdm-line);
+}
