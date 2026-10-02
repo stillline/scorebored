@@ -7,6 +7,8 @@ const fs = require('fs');
 const { Atem } = require('atem-connection');
 const { spawn, exec, execFile } = require('child_process');
 const { SyncManager } = require('./lib/sync');
+const { startSpeedifyStats, registerSpeedifySocketHandlers } = require('./lib/speedify');
+const { registerRtmpSocketHandlers } = require('./lib/rtmp');
 
 const app = express();
 const server = http.createServer(app);
@@ -1481,47 +1483,7 @@ io.on('connection', (socket) => {
     });
   });
 
-  // ── Network Dashboard: Speedify One-Shot Data ──
-
-  socket.on('getSpeedifyState', (callback) => {
-    exec('speedify_cli state', (err, stdout) => {
-      if (err) return callback({ error: err.message });
-      try { callback({ data: JSON.parse(stdout) }); }
-      catch (e) { callback({ data: stdout.trim() }); }
-    });
-  });
-
-  socket.on('getSpeedifyAdapters', (callback) => {
-    exec('speedify_cli show adapters', (err, stdout) => {
-      if (err) return callback({ error: err.message });
-      try { callback({ data: JSON.parse(stdout) }); }
-      catch (e) { callback({ error: 'Parse error' }); }
-    });
-  });
-
-  socket.on('getSpeedifyServer', (callback) => {
-    exec('speedify_cli show currentserver', (err, stdout) => {
-      if (err) return callback({ error: err.message });
-      try { callback({ data: JSON.parse(stdout) }); }
-      catch (e) { callback({ error: 'Parse error' }); }
-    });
-  });
-
-  socket.on('getSpeedifySettings', (callback) => {
-    exec('speedify_cli show settings', (err, stdout) => {
-      if (err) return callback({ error: err.message });
-      try { callback({ data: JSON.parse(stdout) }); }
-      catch (e) { callback({ error: 'Parse error' }); }
-    });
-  });
-
-  socket.on('runStreamTest', (callback) => {
-    exec('speedify_cli streamtest', { timeout: 90000 }, (err, stdout, stderr) => {
-      if (err) return callback({ error: err.message + (stderr ? ' | ' + stderr.trim() : '') });
-      try { callback({ data: JSON.parse(stdout) }); }
-      catch (e) { callback({ data: stdout.trim() }); }
-    });
-  });
+  registerSpeedifySocketHandlers(socket);
 
   // ── iPhone pairing ──
 
@@ -1575,104 +1537,22 @@ io.on('connection', (socket) => {
     });
   });
 
-  const SEND_BUFFER_SCRIPT = '/usr/local/bin/pi-send-buffer.sh';
-
-  socket.on('getNginxStreamDest', (callback) => {
-    fs.readFile(SEND_BUFFER_SCRIPT, 'utf8', (err, data) => {
-      if (err) return callback({ error: err.message });
-      const m = data.match(/^STREAM_URL="(rtmp:\/\/[^"]+)"/m);
-      if (!m) return callback({ error: 'No STREAM_URL found in pi-send-buffer.sh' });
-      const fullUrl = m[1];
-      const lastSlash = fullUrl.lastIndexOf('/');
-      const baseUrl = fullUrl.substring(0, lastSlash);
-      const streamKey = fullUrl.substring(lastSlash + 1);
-      callback({ baseUrl, streamKey, fullUrl });
-    });
-  });
-
-  socket.on('setNginxStreamDest', ({ baseUrl, streamKey }, callback) => {
-    if (!baseUrl || !streamKey) return callback({ error: 'baseUrl and streamKey are required' });
-    if (!/^rtmp:\/\/[a-zA-Z0-9._\-/:]+$/.test(baseUrl)) return callback({ error: 'Invalid base URL' });
-    if (!/^[a-zA-Z0-9._\-]+$/.test(streamKey)) return callback({ error: 'Invalid stream key' });
-    const newUrl = `${baseUrl}/${streamKey}`;
-
-    fs.readFile(SEND_BUFFER_SCRIPT, 'utf8', (err, data) => {
-      if (err) return callback({ error: 'Failed to read script: ' + err.message });
-      if (!/^STREAM_URL="rtmp:\/\/[^"]+"/m.test(data)) return callback({ error: 'Could not locate STREAM_URL in script' });
-      const updated = data.replace(/^(STREAM_URL=")rtmp:\/\/[^"]+(")/m, `$1${newUrl}$2`);
-
-      const proc = exec(`sudo tee ${SEND_BUFFER_SCRIPT}`, (err2) => {
-        if (err2) return callback({ error: 'Failed to write script: ' + err2.message });
-        callback({ ok: true });
-      });
-      proc.stdin.write(updated);
-      proc.stdin.end();
-    });
-  });
+  registerRtmpSocketHandlers(socket);
 });
 
-// ── Speedify Live Stats Subprocess ──
-
-let speedifyProc = null;
-
-function startSpeedifyStats() {
-  if (speedifyProc) return;
-  console.log('Starting speedify_cli stats subprocess...');
-
-  speedifyProc = spawn('speedify_cli', ['-s', 'stats']);
-  let buffer = '';
-
-  speedifyProc.stdout.on('data', (chunk) => {
-    buffer += chunk.toString();
-    let lines = buffer.split('\n');
-    buffer = lines.pop(); // keep incomplete line in buffer
-    lines.forEach(line => {
-      line = line.trim();
-      if (!line) return;
-      try {
-        const parsed = JSON.parse(line);
-        // Output format is ["type", {data}] arrays
-        if (Array.isArray(parsed) && parsed.length === 2) {
-          const msg = parsed[1];
-          msg.type = parsed[0];
-          io.emit('speedifyStats', msg);
-        }
-      } catch (e) {
-        // not valid JSON, skip
-      }
-    });
-  });
-
-  speedifyProc.stderr.on('data', (chunk) => {
-    console.error('speedify_cli stderr:', chunk.toString());
-  });
-
-  speedifyProc.on('close', (code) => {
-    console.log(`speedify_cli stats exited with code ${code}, restarting in 5s...`);
-    speedifyProc = null;
-    setTimeout(startSpeedifyStats, 5000);
-  });
-
-  speedifyProc.on('error', (err) => {
-    console.error('speedify_cli spawn error:', err.message);
-    speedifyProc = null;
-    setTimeout(startSpeedifyStats, 10000);
-  });
-}
-
-startSpeedifyStats();
+const speedify = startSpeedifyStats(io);
 
 // Clean up speedify + tournament-sync subprocesses on exit
 function stopAllSyncProviders() {
   for (const manager of Object.values(syncProviders)) manager.stop();
 }
 process.on('SIGINT', () => {
-  if (speedifyProc) speedifyProc.kill();
+  speedify.stop();
   stopAllSyncProviders();
   process.exit();
 });
 process.on('SIGTERM', () => {
-  if (speedifyProc) speedifyProc.kill();
+  speedify.stop();
   stopAllSyncProviders();
   process.exit();
 });
