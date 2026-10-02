@@ -101,6 +101,16 @@
             </div>
         </div>
 
+        <div class="sec">
+            <div class="sec-hdr">iPhones <span class="badge bx" id="iphoneCountBadge">--</span></div>
+            <div id="iphoneList"><div class="lm"><span class="spinner"></span>Loading...</div></div>
+            <div class="btn-row">
+                <button class="btn btn-p" id="pairIphoneBtn" onclick="pairIphone()">Pair New Phone</button>
+                <button class="btn btn-g" onclick="loadIphones()">Refresh</button>
+            </div>
+            <div class="sb" id="iphoneStatus" style="display:none"></div>
+        </div>
+
         <div id="adapterCards"><div class="lm"><span class="spinner"></span>Waiting for stats...</div></div>
 
         <div class="sec" id="streamHealthSection" style="display:none">
@@ -152,7 +162,7 @@
         let lastStreamingStats = null, lastSessionStats = null, speedifyInfoLoaded = false;
 
         const statusBar = document.getElementById('socketStatus');
-        socket.on('connect', () => { statusBar.textContent = 'Connected'; statusBar.className = 'sb ok'; loadInterfaces(); loadRtmpDest(); renderRtmpPresets(); if (!speedifyInfoLoaded) { loadSpeedifyInfo(); speedifyInfoLoaded = true; } });
+        socket.on('connect', () => { statusBar.textContent = 'Connected'; statusBar.className = 'sb ok'; loadInterfaces(); loadRtmpDest(); renderRtmpPresets(); loadIphones(); if (!speedifyInfoLoaded) { loadSpeedifyInfo(); speedifyInfoLoaded = true; } });
         socket.on('disconnect', () => { statusBar.textContent = 'Disconnected'; statusBar.className = 'sb err'; });
 
         socket.on('speedifyStats', (data) => {
@@ -450,6 +460,50 @@
                     st.className = 'sb ok';
                     st.textContent = 'Updated. nginx reloaded.';
                     loadRtmpDest();
+                }
+            });
+        }
+
+        function loadIphones() {
+            const listEl = document.getElementById('iphoneList');
+            const badge = document.getElementById('iphoneCountBadge');
+            socket.emit('getIphones', (res) => {
+                const phones = (res && res.phones) || [];
+                const connectedCount = phones.filter(p => p.connected).length;
+                badge.textContent = connectedCount + '/' + phones.length;
+                badge.className = 'badge ' + (connectedCount ? 'bg' : 'bx');
+                if (!phones.length) {
+                    listEl.innerHTML = '<div class="lm">No paired or connected phones</div>';
+                    return;
+                }
+                listEl.innerHTML = phones.map(p => `
+                    <div class="ac ${p.connected ? 'on' : 'off'}">
+                        <div class="ac-hdr">
+                            <span class="ac-name">${esc(p.name)}</span>
+                            ${p.unpaired ? '<span class="ac-isp">unpaired</span>' : ''}
+                            <span class="ac-isp">${p.connected ? 'connected' : 'not connected'}</span>
+                        </div>
+                    </div>
+                `).join('');
+            });
+        }
+
+        function pairIphone() {
+            const btn = document.getElementById('pairIphoneBtn');
+            const st = document.getElementById('iphoneStatus');
+            btn.disabled = true;
+            st.style.display = '';
+            st.className = 'sb';
+            st.innerHTML = '<span class="spinner"></span>Pairing... check phone for trust prompt';
+            socket.emit('pairIphone', (res) => {
+                btn.disabled = false;
+                if (res.error) {
+                    st.className = 'sb err';
+                    st.textContent = 'Error: ' + res.error;
+                } else {
+                    st.className = 'sb ok';
+                    st.textContent = res.message || 'Paired';
+                    loadIphones();
                 }
             });
         }
