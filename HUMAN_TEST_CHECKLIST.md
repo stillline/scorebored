@@ -60,6 +60,19 @@ anything) and how it was fixed.
       site — confirm the trust-prompt flow and resulting bonded interface
       actually show up correctly, not just that the socket call succeeds.
 
+## systemd service (Phase 7)
+
+- [x] Service starts, restarts, and responds correctly - verified live on
+      the Pi (HTTP/display/network pages, ATEM reconnect, Speedify/Podium
+      subprocess spawning, wpctl and sudo-gated nmcli/hostapd calls, kiosk
+      browser's socket.io auto-reconnect) without a full reboot.
+- [ ] **Full reboot test** - the one thing not exercised: power-cycle (or
+      `sudo reboot`) the Pi and confirm the server comes up via systemd,
+      and the kiosk display comes up via labwc's autostart + launch-display.sh
+      waiting for it, with no manual intervention needed. This is the real
+      test of whether the two boot paths actually coordinate correctly from
+      a cold start, not just from a warm `systemctl restart`.
+
 ## Node 22 upgrade (Phase 3)
 
 - [ ] Confirm nothing else on the Pi that might incidentally shell out to
