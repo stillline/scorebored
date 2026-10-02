@@ -4,11 +4,11 @@ const https = require('https');
 const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
-const { Atem } = require('atem-connection');
 const { spawn, exec, execFile } = require('child_process');
 const { SyncManager } = require('./lib/sync');
 const { startSpeedifyStats, registerSpeedifySocketHandlers } = require('./lib/speedify');
 const { registerRtmpSocketHandlers } = require('./lib/rtmp');
+const { createAtemControl } = require('./lib/atem');
 
 const app = express();
 const server = http.createServer(app);
@@ -22,11 +22,6 @@ const BRACKET_FILE = path.join(__dirname, 'bracket.json');
 const ATEM_IP = process.env.ATEM_IP || '10.42.0.100'; // Default ATEM IP
 const GRAPHICS_INPUT = parseInt(process.env.GRAPHICS_INPUT || '1'); // Input number for graphics/scoreboard
 const DOWNSTREAM_KEY = parseInt(process.env.DOWNSTREAM_KEY || '1'); // Which downstream key to control
-
-// ATEM connection
-let atem = null;
-let atemConnected = false;
-let previousInput = 1; // Track previous input to switch back to
 
 // Default game state
 const defaultGameState = {
@@ -108,261 +103,21 @@ function getAvailableVideos() {
   }
 }
 
-// ATEM Control Functions
-async function connectToAtem() {
-  if (atem) {
-    return;
-  }
-
-  try {
-    console.log(`Connecting to ATEM at ${ATEM_IP}...`);
-    atem = new Atem();
-
-    atem.on('connected', () => {
-      console.log('✅ Connected to ATEM switcher');
-      atemConnected = true;
-      gameState.atemStatus.connected = true;
-
-      // Get current state
-      const state = atem.state;
-      if (state && state.video && state.video.mixEffects && state.video.mixEffects[0]) {
-        gameState.atemStatus.currentInput = state.video.mixEffects[0].programInput;
-        previousInput = gameState.atemStatus.currentInput;
-        console.log(`Current ATEM input: ${gameState.atemStatus.currentInput}`);
-      }
-
-      if (state && state.video && state.video.downstreamKeyers && state.video.downstreamKeyers[DOWNSTREAM_KEY - 1]) {
-        gameState.atemStatus.downstreamKeyEnabled = state.video.downstreamKeyers[DOWNSTREAM_KEY - 1].onAir;
-        console.log(`Downstream key ${DOWNSTREAM_KEY} status: ${gameState.atemStatus.downstreamKeyEnabled ? 'ON' : 'OFF'}`);
-      }
-
-      if (state && state.video && state.video.mixEffects && state.video.mixEffects[0] && state.video.mixEffects[0].upstreamKeyers) {
-        gameState.atemStatus.upstreamKeyEnabled = state.video.mixEffects[0].upstreamKeyers[0]?.onAir || false;
-        console.log(`Upstream key status: ${gameState.atemStatus.upstreamKeyEnabled ? 'ON' : 'OFF'}`);
-      }
-
-      saveGameState();
-      io.emit('gameUpdate', gameState);
-    });
-
-    atem.on('disconnected', () => {
-      console.log('❌ Disconnected from ATEM switcher');
-      atemConnected = false;
-      gameState.atemStatus.connected = false;
-      saveGameState();
-      io.emit('gameUpdate', gameState);
-    });
-
-    atem.on('error', (error) => {
-      console.error('ATEM connection error:', error);
-      atemConnected = false;
-      gameState.atemStatus.connected = false;
-      saveGameState();
-      io.emit('gameUpdate', gameState);
-    });
-
-    // Listen for ATEM state changes
-    atem.on('stateChanged', (state, pathToChange) => {
-      console.log('🔄 ATEM state changed:', pathToChange);
-
-      // Check for DSK state changes
-      if (pathToChange.includes('video.downstreamKeyers')) {
-        const keyIndex = DOWNSTREAM_KEY - 1;
-        const dskState = state.video?.downstreamKeyers?.[keyIndex]?.onAir || false;
-        console.log(`🔄 DSK ${DOWNSTREAM_KEY} state changed to: ${dskState ? 'ON' : 'OFF'}`);
-
-        // Update our game state to match ATEM reality
-        gameState.atemStatus.downstreamKeyEnabled = dskState;
-        saveGameState();
-        io.emit('gameUpdate', gameState);
-      }
-
-      // Check for USK state changes
-      if (pathToChange.includes('video.mixEffects.0.upstreamKeyers')) {
-        const uskState = state.video?.mixEffects?.[0]?.upstreamKeyers?.[0]?.onAir || false;
-        console.log(`🔄 USK state changed to: ${uskState ? 'ON' : 'OFF'}`);
-
-        gameState.atemStatus.upstreamKeyEnabled = uskState;
-        saveGameState();
-        io.emit('gameUpdate', gameState);
-      }
-
-      // Check for input changes
-      if (pathToChange.includes('video.mixEffects.0.programInput')) {
-        const currentInput = state.video?.mixEffects?.[0]?.programInput;
-        if (currentInput && currentInput !== gameState.atemStatus.currentInput) {
-          console.log(`🔄 ATEM input changed to: ${currentInput}`);
-          gameState.atemStatus.currentInput = currentInput;
-          saveGameState();
-          io.emit('gameUpdate', gameState);
-        }
-      }
-    });
-
-    await atem.connect(ATEM_IP);
-  } catch (error) {
-    console.error('Failed to connect to ATEM:', error);
-    atemConnected = false;
-    gameState.atemStatus.connected = false;
-    saveGameState();
-    io.emit('gameUpdate', gameState);
-  }
-}
-
-async function switchToGraphicsInput() {
-  if (!atem || !atemConnected) {
-    console.log('ATEM not connected - cannot switch to graphics input');
-    return false;
-  }
-
-  try {
-    // Store current input before switching (but only if it's not already the graphics input)
-    const currentState = atem.state;
-    if (currentState && currentState.video && currentState.video.mixEffects && currentState.video.mixEffects[0]) {
-      const currentInput = currentState.video.mixEffects[0].programInput;
-
-      // Internal ATEM inputs that should never be restored to after a break:
-      // 0=Black, 1000=Bars, 2001=Color1, 2002=Color2
-      const internalInputs = [0, 1000, 2001, 2002];
-      if (currentInput === GRAPHICS_INPUT) {
-        console.log(`Current input ${currentInput} is graphics input - keeping previous input: ${previousInput}`);
-      } else if (internalInputs.includes(currentInput)) {
-        console.log(`Current input ${currentInput} is an internal source (black/bars/color) - defaulting previous input to camera 2`);
-        previousInput = 2;
-      } else {
-        previousInput = currentInput;
-        console.log(`Storing previous input: ${previousInput}`);
-      }
-
-      gameState.atemStatus.currentInput = currentInput;
-    }
-
-    // Switch to graphics input using auto transition
-    console.log(`Auto transitioning ATEM to graphics input ${GRAPHICS_INPUT}`);
-    await atem.changePreviewInput(GRAPHICS_INPUT);
-    await atem.autoTransition();
-    gameState.atemStatus.currentInput = GRAPHICS_INPUT;
-
-    saveGameState();
-    return true;
-  } catch (error) {
-    console.error('Failed to switch to graphics input:', error);
-    return false;
-  }
-}
-
-async function switchToPreviousInput() {
-  if (!atem || !atemConnected) {
-    console.log('ATEM not connected - cannot switch to previous input');
-    return false;
-  }
-
-  try {
-    // Safety check: Don't switch back to graphics input
-    if (previousInput === GRAPHICS_INPUT) {
-      console.log(`Previous input ${previousInput} is graphics input - defaulting to input 2`);
-      previousInput = 2; // Default to camera 2
-    }
-
-    console.log(`Direct cut ATEM back to previous input ${previousInput} (avoiding auto transition)`);
-    await atem.changeProgramInput(previousInput);
-    gameState.atemStatus.currentInput = previousInput;
-
-    saveGameState();
-    return true;
-  } catch (error) {
-    console.error('Failed to switch to previous input:', error);
-    return false;
-  }
-}
-
-async function setDownstreamKey(enabled) {
-  if (!atem || !atemConnected) {
-    console.log('ATEM not connected - cannot control downstream key');
-    return false;
-  }
-
-  try {
-    const keyIndex = DOWNSTREAM_KEY - 1;
-    console.log(`🔧 Setting downstream key ${DOWNSTREAM_KEY} (index ${keyIndex}) to ${enabled ? 'ON' : 'OFF'}`);
-
-    // Check current state before sending command
-    const currentState = atem.state;
-    const currentDSKState = currentState?.video?.downstreamKeyers?.[keyIndex]?.onAir || false;
-    console.log(`🔧 Current ATEM DSK state: ${currentDSKState ? 'ON' : 'OFF'} -> Target: ${enabled ? 'ON' : 'OFF'}`);
-
-    // For DSK ON, try auto transition instead of direct command
-    if (enabled && !currentDSKState) {
-      console.log(`🔧 DSK is OFF, trying auto transition to turn ON`);
-      try {
-        await atem.autoDownstreamKey(keyIndex);
-        console.log(`🔧 ATEM autoDownstreamKey command sent successfully`);
-      } catch (autoErr) {
-        console.log(`🔧 autoDownstreamKey failed, trying direct command:`, autoErr.message);
-        await atem.setDownstreamKeyOnAir(keyIndex, enabled);
-        console.log(`🔧 ATEM setDownstreamKeyOnAir command sent successfully`);
-      }
-    } else if (currentDSKState !== enabled) {
-      // For DSK OFF, use direct command only if state needs to change
-      await atem.setDownstreamKeyOnAir(keyIndex, enabled);
-      console.log(`🔧 ATEM setDownstreamKeyOnAir command sent successfully`);
-    } else {
-      console.log(`🔧 DSK already in target state - skipping command`);
-    }
-
-    // Wait a moment and check if it actually changed
-    setTimeout(async () => {
-      try {
-        const newState = atem.state;
-        const newDSKState = newState?.video?.downstreamKeyers?.[keyIndex]?.onAir || false;
-        console.log(`🔧 ATEM DSK state after command: ${newDSKState ? 'ON' : 'OFF'} (expected: ${enabled ? 'ON' : 'OFF'})`);
-      } catch (e) {
-        console.log('🔧 Could not read ATEM state after DSK command');
-      }
-    }, 1000);
-
-    gameState.atemStatus.downstreamKeyEnabled = enabled;
-    saveGameState();
-    return true;
-  } catch (error) {
-    console.error('Failed to control downstream key:', error);
-    return false;
-  }
-}
-
-async function fadeDownstreamKey(fadeIn = true) {
-  if (!atem || !atemConnected) {
-    console.log('ATEM not connected - cannot fade downstream key');
-    return false;
-  }
-
-  try {
-    const keyIndex = DOWNSTREAM_KEY - 1;
-    console.log(`${fadeIn ? 'Fading in' : 'Fading out'} downstream key ${DOWNSTREAM_KEY}`);
-
-    // Get current DSK state
-    const currentState = atem.state;
-    const currentDSKState = currentState?.video?.downstreamKeyers?.[keyIndex]?.onAir || false;
-
-    console.log(`Current DSK state: ${currentDSKState ? 'ON' : 'OFF'}, Target state: ${fadeIn ? 'ON' : 'OFF'}`);
-
-    // Only auto transition if we need to change state
-    if (currentDSKState !== fadeIn) {
-      console.log('DSK state needs to change - triggering auto transition');
-      await atem.autoDownstreamKey(keyIndex, fadeIn);
-    } else {
-      console.log('DSK already in target state - no transition needed');
-    }
-
-    // Update our game state
-    gameState.atemStatus.downstreamKeyEnabled = fadeIn;
-    saveGameState();
-    return true;
-  } catch (error) {
-    console.error('Failed to fade downstream key:', error);
-    return false;
-  }
-}
+const atemControl = createAtemControl({
+  io,
+  gameState,
+  saveGameState,
+  atemIp: ATEM_IP,
+  graphicsInput: GRAPHICS_INPUT,
+  downstreamKey: DOWNSTREAM_KEY,
+});
+const {
+  connectToAtem,
+  switchToGraphicsInput,
+  switchToPreviousInput,
+  setDownstreamKey,
+  fadeDownstreamKey,
+} = atemControl;
 
 // ── AP Channel Helper ──
 
@@ -751,10 +506,10 @@ app.post('/api/swap-sides', (req, res) => {
 app.post('/api/atem/input/:num', async (req, res) => {
   const input = parseInt(req.params.num, 10);
   if (isNaN(input) || input < 1) return res.status(400).json({ error: 'Invalid input number' });
-  if (!atem || !atemConnected) return res.status(503).json({ error: 'ATEM not connected' });
+  if (!atemControl.atem || !atemControl.isConnected) return res.status(503).json({ error: 'ATEM not connected' });
   try {
     console.log(`Direct cut to input: ${input}`);
-    await atem.changeProgramInput(input);
+    await atemControl.atem.changeProgramInput(input);
     gameState.atemStatus.currentInput = input;
     saveGameState();
     io.emit('gameUpdate', gameState);
@@ -949,8 +704,8 @@ io.on('connection', (socket) => {
       console.log('🎬 Bars were active — inheriting bars audio snapshot for commercial break restore');
       gameState.barsActive = false;
       gameState.barsAudioSnapshot = [];
-    } else if (atemConnected && atem.state && atem.state.fairlight && atem.state.fairlight.inputs) {
-      const inputs = atem.state.fairlight.inputs;
+    } else if (atemControl.isConnected && atemControl.atem.state && atemControl.atem.state.fairlight && atemControl.atem.state.fairlight.inputs) {
+      const inputs = atemControl.atem.state.fairlight.inputs;
       for (const [inputIndex, input] of Object.entries(inputs)) {
         for (const [sourceKey, source] of Object.entries(input.sources)) {
           const mixOption = source.properties.mixOption;
@@ -964,13 +719,13 @@ io.on('connection', (socket) => {
     io.emit('displayBlack', true);
 
     // ATEM sequence: Fade out downstream key -> Switch to graphics input -> Ensure DSK stays OFF
-    if (atemConnected) {
+    if (atemControl.isConnected) {
       console.log('🎬 ATEM: Starting commercial break sequence...');
 
       // Step 1: Turn off USK if it was active
       if (uskWasActive) {
         console.log('🎬 Turning off USK for commercial break...');
-        await atem.setUpstreamKeyerOnAir(false, 0, 0);
+        await atemControl.atem.setUpstreamKeyerOnAir(false, 0, 0);
         gameState.atemStatus.upstreamKeyEnabled = false;
       }
 
@@ -1002,7 +757,7 @@ io.on('connection', (socket) => {
           console.log(`🎬 Leaving graphics audio input ${ch.inputIndex} source ${ch.sourceKey} unchanged`);
         } else {
           console.log(`🎬 Muting input ${ch.inputIndex} source ${ch.sourceKey}`);
-          await atem.setFairlightAudioMixerSourceProps(ch.inputIndex, BigInt(ch.sourceKey), { mixOption: 1 }); // 1 = Off
+          await atemControl.atem.setFairlightAudioMixerSourceProps(ch.inputIndex, BigInt(ch.sourceKey), { mixOption: 1 }); // 1 = Off
         }
       }
     }
@@ -1036,7 +791,7 @@ io.on('connection', (socket) => {
     io.emit('gameUpdate', gameState);
 
     // ATEM sequence: Switch back to camera, then fade in DSK
-    if (atemConnected) {
+    if (atemControl.isConnected) {
       console.log('🎬 ATEM: Ending commercial break sequence...');
 
       // Step 1: Switch back to previous camera input
@@ -1053,7 +808,7 @@ io.on('connection', (socket) => {
 
       // Step 4: Turn USK on as DSK fades in
       console.log('🎬 Turning USK on after commercial break...');
-      await atem.setUpstreamKeyerOnAir(true, 0, 0);
+      await atemControl.atem.setUpstreamKeyerOnAir(true, 0, 0);
       gameState.atemStatus.upstreamKeyEnabled = true;
 
       // Step 5: Restore HDMI camera inputs only (inputs 2-4); leave mics muted for manual restore
@@ -1062,7 +817,7 @@ io.on('connection', (socket) => {
         for (const ch of audioSnapshot) {
           if (ch.inputIndex !== GRAPHICS_INPUT) {
             console.log(`🎬 Restoring input ${ch.inputIndex} source ${ch.sourceKey} to mixOption=${ch.mixOption}`);
-            await atem.setFairlightAudioMixerSourceProps(ch.inputIndex, BigInt(ch.sourceKey), { mixOption: ch.mixOption });
+            await atemControl.atem.setFairlightAudioMixerSourceProps(ch.inputIndex, BigInt(ch.sourceKey), { mixOption: ch.mixOption });
           }
         }
       }
@@ -1081,15 +836,15 @@ io.on('connection', (socket) => {
   });
 
   socket.on('atemSwitchInput', async (data) => {
-    if (!atem || !atemConnected) {
+    if (!atemControl.atem || !atemControl.isConnected) {
       console.log('ATEM not connected - cannot switch input');
       return;
     }
 
     try {
       console.log(`Manual auto transition to input: ${data.input}`);
-      await atem.changePreviewInput(data.input);
-      await atem.autoTransition();
+      await atemControl.atem.changePreviewInput(data.input);
+      await atemControl.atem.autoTransition();
       gameState.atemStatus.currentInput = data.input;
       saveGameState();
       io.emit('gameUpdate', gameState);
@@ -1100,7 +855,7 @@ io.on('connection', (socket) => {
 
   socket.on('atemToggleDownstreamKey', async () => {
     console.log('🔧 MANUAL DSK TOGGLE REQUESTED - someone clicked the button');
-    if (!atem || !atemConnected) {
+    if (!atemControl.atem || !atemControl.isConnected) {
       console.log('ATEM not connected - cannot toggle downstream key');
       return;
     }
@@ -1113,7 +868,7 @@ io.on('connection', (socket) => {
 
   socket.on('atemToggleUpstreamKey', async () => {
     console.log('🔧 MANUAL USK TOGGLE REQUESTED - someone clicked the button');
-    if (!atem || !atemConnected) {
+    if (!atemControl.atem || !atemControl.isConnected) {
       console.log('ATEM not connected - cannot toggle upstream key');
       return;
     }
@@ -1121,7 +876,7 @@ io.on('connection', (socket) => {
     const newState = !gameState.atemStatus.upstreamKeyEnabled;
     console.log(`🔧 USK toggle: ${gameState.atemStatus.upstreamKeyEnabled ? 'ON' : 'OFF'} -> ${newState ? 'ON' : 'OFF'}`);
     try {
-      await atem.setUpstreamKeyerOnAir(newState, 0, 0);
+      await atemControl.atem.setUpstreamKeyerOnAir(newState, 0, 0);
       gameState.atemStatus.upstreamKeyEnabled = newState;
       saveGameState();
       io.emit('gameUpdate', gameState);
@@ -1131,7 +886,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('atemStartBars', async () => {
-    if (!atem || !atemConnected) {
+    if (!atemControl.atem || !atemControl.isConnected) {
       console.log('ATEM not connected - cannot start/stop bars');
       return;
     }
@@ -1147,8 +902,8 @@ io.on('connection', (socket) => {
 
         // Snapshot audio before muting
         const barsAudioSnapshot = [];
-        if (atem.state && atem.state.fairlight && atem.state.fairlight.inputs) {
-          for (const [inputIndex, input] of Object.entries(atem.state.fairlight.inputs)) {
+        if (atemControl.atem.state && atemControl.atem.state.fairlight && atemControl.atem.state.fairlight.inputs) {
+          for (const [inputIndex, input] of Object.entries(atemControl.atem.state.fairlight.inputs)) {
             for (const [sourceKey, source] of Object.entries(input.sources)) {
               const mixOption = source.properties.mixOption;
               barsAudioSnapshot.push({ inputIndex: parseInt(inputIndex), sourceKey, mixOption });
@@ -1161,7 +916,7 @@ io.on('connection', (socket) => {
 
         // Cut to bars so key changes happen off-camera
         console.log('🎬 Cutting to bars...');
-        await atem.changeProgramInput(1000);
+        await atemControl.atem.changeProgramInput(1000);
         gameState.atemStatus.currentInput = 1000;
 
         // Turn off DSK if active
@@ -1173,7 +928,7 @@ io.on('connection', (socket) => {
         // Turn off USK if active
         if (gameState.atemStatus.upstreamKeyEnabled) {
           console.log('🎬 Turning off USK for bars...');
-          await atem.setUpstreamKeyerOnAir(false, 0, 0);
+          await atemControl.atem.setUpstreamKeyerOnAir(false, 0, 0);
           gameState.atemStatus.upstreamKeyEnabled = false;
         }
 
@@ -1181,7 +936,7 @@ io.on('connection', (socket) => {
         console.log('🎬 Muting all audio inputs for bars...');
         for (const ch of barsAudioSnapshot) {
           if (ch.inputIndex !== GRAPHICS_INPUT) {
-            await atem.setFairlightAudioMixerSourceProps(ch.inputIndex, BigInt(ch.sourceKey), { mixOption: 1 });
+            await atemControl.atem.setFairlightAudioMixerSourceProps(ch.inputIndex, BigInt(ch.sourceKey), { mixOption: 1 });
           }
         }
 
@@ -1198,9 +953,9 @@ io.on('connection', (socket) => {
         gameState.barsAudioSnapshot = [];
 
         // Switch back to previous camera input
-        console.log(`🎬 Switching back to previous input: ${previousInput}`);
-        await atem.changeProgramInput(previousInput);
-        gameState.atemStatus.currentInput = previousInput;
+        console.log(`🎬 Switching back to previous input: ${atemControl.previousInput}`);
+        await atemControl.atem.changeProgramInput(atemControl.previousInput);
+        gameState.atemStatus.currentInput = atemControl.previousInput;
 
         // Restore all audio inputs to pre-bars state
         if (snapshot.length > 0) {
@@ -1208,7 +963,7 @@ io.on('connection', (socket) => {
           for (const ch of snapshot) {
             if (ch.inputIndex !== GRAPHICS_INPUT) {
               console.log(`🎬 Restoring input ${ch.inputIndex} source ${ch.sourceKey} to mixOption=${ch.mixOption}`);
-              await atem.setFairlightAudioMixerSourceProps(ch.inputIndex, BigInt(ch.sourceKey), { mixOption: ch.mixOption });
+              await atemControl.atem.setFairlightAudioMixerSourceProps(ch.inputIndex, BigInt(ch.sourceKey), { mixOption: ch.mixOption });
             }
           }
         }
