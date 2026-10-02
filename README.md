@@ -26,8 +26,7 @@ The primary interface for running a game.
 - **Color presets** — 20 saved color swatches (persisted in browser localStorage); click to apply, long-press or use paste button to set
 - **Swap Sides** — mirrors left/right teams, scores, and colors
 - **Reset Game** — sets both scores to 0
-- **Report Final Score** — saves the current live scores as the final result for the active matchup in `bracket.json`, then automatically advances to the next game
-- **Prev Game / Next Game** — navigate through the tournament schedule; restores previously saved scores when moving to a completed game
+- **Prev Game / Next Game** — navigate through the tournament schedule; loads the next/previous matchup's teams and colors onto the scoreboard, resetting scores to 0. Saving a final score for the active matchup is done on the `/bracket` page (see below), not from the control panel.
 - **Commercial Break** — triggers ATEM switcher cut to graphics input with full audio management (see ATEM section)
 
 ---
@@ -59,16 +58,15 @@ Each row shows:
 ### Live updates
 
 - Score boxes update in real time as scores change on the scoreboard (for the active, non-finalized game)
-- When Report Final Score is pressed on the control page, the bracket page updates immediately via WebSocket
 
 ### Workflow
 
 1. Open `/bracket` and hit **Save Schedule** on first use (creates `bracket.json`)
 2. Click **Load** on a matchup — teams, colors, and any existing scores load onto the scoreboard
 3. Play the game; scores update live in the schedule
-4. At the end, press **Report Final Score** on the control page — scores are saved, game is greyed out, and the next game loads automatically
-5. To correct a result: use **Prev Game** to go back, adjust scores, hit **Report Final Score** again
-6. To manually edit a saved score: change the score boxes on the bracket page and hit **Save**
+4. At the end, hit **Save** on the bracket page — scores are saved and the game is greyed out as final
+5. Use **Next Game** on the control page to load the next matchup (resets scores to 0)
+6. To correct a finalized result: change the score boxes on the bracket page and hit **Save** again
 7. To un-finalize a game: click `↺` — the game returns to normal appearance but retains whatever scores were entered
 
 ### Default data

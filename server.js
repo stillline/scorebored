@@ -66,7 +66,8 @@ const defaultGameState = {
     currentInput: 1,
     downstreamKeyEnabled: false,
     upstreamKeyEnabled: false
-  }
+  },
+  loadedMatchupIndex: null
 };
 
 // Load saved state or use default
@@ -775,16 +776,6 @@ app.post('/api/bracket', express.json(), (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
-});
-
-app.get('/api/test-black', (req, res) => {
-  io.emit('displayBlack', true);
-  res.json({ ok: true });
-});
-
-app.get('/api/reload-display', (req, res) => {
-  io.emit('reloadPage');
-  res.json({ ok: true });
 });
 
 app.get('/api/videos', (req, res) => {
