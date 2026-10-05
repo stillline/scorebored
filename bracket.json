@@ -1,77 +1,1464 @@
 {
   "matchups": [
     {
-      "group": "Round 1"
+      "group": "Group A"
     },
     {
       "round": 1,
-      "identifier": "Winners Bracket Quarterfinal",
-      "suggested_play_order": 1,
-      "left": "TBD",
-      "right": "TBD",
+      "identifier": "2c3dcc33-223f-423b-b232-f81419a871ad",
+      "left": "Deez Netz",
+      "right": "Midnight Mavericks",
       "lc": "#292929",
       "rc": "#ebebeb"
     },
     {
       "round": 1,
-      "identifier": "Winners Bracket Quarterfinal",
-      "suggested_play_order": 2,
-      "left": "TBD",
-      "right": "TBD",
+      "identifier": "cdf57b34-3513-4aed-8da4-b0fa49715274",
+      "left": "Hammers",
+      "right": "Pixel Pirates",
       "lc": "#292929",
       "rc": "#ebebeb"
     },
     {
       "round": 1,
-      "identifier": "Winners Bracket Quarterfinal",
-      "suggested_play_order": 3,
-      "left": "TBD",
-      "right": "TBD",
+      "identifier": "a3a83334-4e00-4952-8251-ca7fc82b72b0",
+      "left": "Bringers",
+      "right": "Rogue Squirrels",
       "lc": "#292929",
       "rc": "#ebebeb"
     },
     {
       "round": 1,
-      "identifier": "Winners Bracket Quarterfinal",
-      "suggested_play_order": 4,
-      "left": "TBD",
-      "right": "TBD",
+      "identifier": "10143cd8-c5f3-4f04-8349-9d42ca41f0dd",
+      "left": "Sharks",
+      "right": "Neon Ninjas",
       "lc": "#292929",
       "rc": "#ebebeb"
     },
     {
-      "group": "Round 2"
+      "round": 1,
+      "identifier": "9b6ac388-4c9a-41bb-87d2-5ba514e14e13",
+      "left": "Whales",
+      "right": "Lucky Ducks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 1,
+      "identifier": "38e63656-fddb-4759-8ac2-d25d5c635e2c",
+      "left": "Otters",
+      "right": "Crimson Tide Pods",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 1,
+      "identifier": "aa1af392-aa97-4688-8a54-bc49972774a5",
+      "left": "Night Owls",
+      "right": "Iron Wolves",
+      "lc": "#292929",
+      "rc": "#ebebeb"
     },
     {
       "round": 2,
-      "identifier": "Winners Bracket Semifinal",
-      "suggested_play_order": 7,
-      "left": "Winner of Game 1",
-      "right": "Winner of Game 2",
+      "identifier": "e037c589-2e9d-4ec0-b9fa-5014773f45fa",
+      "left": "Deez Netz",
+      "right": "Pixel Pirates",
       "lc": "#292929",
       "rc": "#ebebeb"
     },
     {
       "round": 2,
-      "identifier": "Winners Bracket Semifinal",
-      "suggested_play_order": 8,
-      "left": "Winner of Game 3",
-      "right": "Winner of Game 4",
+      "identifier": "b550f080-93b0-4f2f-bb49-76077743996e",
+      "left": "Midnight Mavericks",
+      "right": "Rogue Squirrels",
       "lc": "#292929",
       "rc": "#ebebeb"
     },
     {
-      "group": "Round 3"
+      "round": 2,
+      "identifier": "88160df7-11a3-411d-a3ee-4d80e8a7396f",
+      "left": "Hammers",
+      "right": "Neon Ninjas",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 2,
+      "identifier": "92d7cddb-7fcc-407d-b170-9064562d7376",
+      "left": "Bringers",
+      "right": "Lucky Ducks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 2,
+      "identifier": "23a8c606-8c14-4f58-b825-f6de17ed5e78",
+      "left": "Sharks",
+      "right": "Crimson Tide Pods",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 2,
+      "identifier": "53f2c533-98f6-4536-a8f6-d37ee792ebc9",
+      "left": "Whales",
+      "right": "Iron Wolves",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 2,
+      "identifier": "3029686e-a7ca-468f-bf3d-86548df21f82",
+      "left": "Otters",
+      "right": "Night Owls",
+      "lc": "#292929",
+      "rc": "#ebebeb"
     },
     {
       "round": 3,
-      "identifier": "Winners Bracket Final",
-      "suggested_play_order": 11,
-      "left": "Winner of Game 7",
-      "right": "Winner of Game 8",
+      "identifier": "be10b1cb-8968-4b60-afec-7c48a969116e",
+      "left": "Deez Netz",
+      "right": "Rogue Squirrels",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 3,
+      "identifier": "6c6a69b1-17a2-45ad-a472-17847d8815f3",
+      "left": "Pixel Pirates",
+      "right": "Neon Ninjas",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 3,
+      "identifier": "13cbfd70-6c11-4dbc-a09a-d25a6974ce60",
+      "left": "Midnight Mavericks",
+      "right": "Lucky Ducks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 3,
+      "identifier": "96895b85-b265-4a78-bf82-6c06fb818586",
+      "left": "Hammers",
+      "right": "Crimson Tide Pods",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 3,
+      "identifier": "24ce0a91-0ebd-4f93-bee8-85417d91b779",
+      "left": "Bringers",
+      "right": "Iron Wolves",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 3,
+      "identifier": "001c0017-6b88-4ff9-b8ed-45d1cc3c2399",
+      "left": "Sharks",
+      "right": "Night Owls",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 3,
+      "identifier": "6e9f569d-98fd-44f7-ac3e-dc39285c3439",
+      "left": "Whales",
+      "right": "Otters",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 4,
+      "identifier": "b713db69-0194-4f2a-ba46-6775e59d2354",
+      "left": "Deez Netz",
+      "right": "Neon Ninjas",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 4,
+      "identifier": "d001957b-c311-4ce1-9c7a-1ceb2e63ac9c",
+      "left": "Rogue Squirrels",
+      "right": "Lucky Ducks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 4,
+      "identifier": "7c7588bb-b4c3-4df4-8a1a-93b068fc279b",
+      "left": "Pixel Pirates",
+      "right": "Crimson Tide Pods",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 4,
+      "identifier": "8ea9c021-0d4b-42e5-9ec3-2e68bd9d2619",
+      "left": "Midnight Mavericks",
+      "right": "Iron Wolves",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 4,
+      "identifier": "7420cb9f-5dc8-4518-8b23-9c292b0c05a4",
+      "left": "Hammers",
+      "right": "Night Owls",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 4,
+      "identifier": "8184bab8-0796-4a18-a302-525a4f64c595",
+      "left": "Bringers",
+      "right": "Otters",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 4,
+      "identifier": "12055b86-c134-46a5-a3fd-72113e398253",
+      "left": "Sharks",
+      "right": "Whales",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 5,
+      "identifier": "c0963387-d125-4a64-a441-5e227ca3ad44",
+      "left": "Deez Netz",
+      "right": "Lucky Ducks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 5,
+      "identifier": "da85fcc8-e3dd-4e40-a29a-56cdd671ffc3",
+      "left": "Neon Ninjas",
+      "right": "Crimson Tide Pods",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 5,
+      "identifier": "dc2861c8-9c96-4aaa-aa9b-5edda0964d1b",
+      "left": "Rogue Squirrels",
+      "right": "Iron Wolves",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 5,
+      "identifier": "2a12e7cc-9aa8-4738-b726-ee4dfcfc6589",
+      "left": "Pixel Pirates",
+      "right": "Night Owls",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 5,
+      "identifier": "15d63f46-664a-4a44-b824-ab292ad33ee0",
+      "left": "Midnight Mavericks",
+      "right": "Otters",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 5,
+      "identifier": "ef900476-6913-44ad-baf7-78d4d92ce1ec",
+      "left": "Hammers",
+      "right": "Whales",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 5,
+      "identifier": "9c364349-77ed-4248-aecd-6983a88f132f",
+      "left": "Bringers",
+      "right": "Sharks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 6,
+      "identifier": "d8ef6f18-f619-4840-8713-661a6b16bc4f",
+      "left": "Deez Netz",
+      "right": "Crimson Tide Pods",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 6,
+      "identifier": "e652b195-7c0e-4984-abd1-586af3d787c4",
+      "left": "Lucky Ducks",
+      "right": "Iron Wolves",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 6,
+      "identifier": "3094f6a6-8eb2-4a2b-8fb5-3375d3f9deee",
+      "left": "Neon Ninjas",
+      "right": "Night Owls",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 6,
+      "identifier": "980f8882-7349-4ff5-878a-36e6f3f66b9e",
+      "left": "Rogue Squirrels",
+      "right": "Otters",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 6,
+      "identifier": "83b906a1-9333-4459-bb33-a5401087d840",
+      "left": "Pixel Pirates",
+      "right": "Whales",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 6,
+      "identifier": "5f184a3e-a598-4bf8-af30-d537b6882469",
+      "left": "Midnight Mavericks",
+      "right": "Sharks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 6,
+      "identifier": "ae2966b8-6ab0-4013-a89e-a61d5646145b",
+      "left": "Hammers",
+      "right": "Bringers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 7,
+      "identifier": "8affc471-882f-4243-b84c-c919f3c11517",
+      "left": "Deez Netz",
+      "right": "Iron Wolves",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 7,
+      "identifier": "3bd7a074-7781-4f6e-90f4-ae6c407db477",
+      "left": "Crimson Tide Pods",
+      "right": "Night Owls",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 7,
+      "identifier": "38c767b6-2a14-453b-ad5d-7c2f5c6ad265",
+      "left": "Lucky Ducks",
+      "right": "Otters",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 7,
+      "identifier": "d0d0a5ca-6efd-4698-90cf-ff47a91d90cb",
+      "left": "Neon Ninjas",
+      "right": "Whales",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 7,
+      "identifier": "2fb8510c-fce3-403f-a0f3-755d000d2781",
+      "left": "Rogue Squirrels",
+      "right": "Sharks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 7,
+      "identifier": "a624e4b3-8af4-4dad-9995-39d5f3e1839f",
+      "left": "Pixel Pirates",
+      "right": "Bringers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 7,
+      "identifier": "2e48a337-1f96-4c30-b13f-09401c29a8f8",
+      "left": "Midnight Mavericks",
+      "right": "Hammers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 8,
+      "identifier": "4dba09af-f37f-4bc5-8672-4831e05cbf5e",
+      "left": "Deez Netz",
+      "right": "Night Owls",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 8,
+      "identifier": "15ddc57b-6309-4d08-ad33-ce9a321c9047",
+      "left": "Iron Wolves",
+      "right": "Otters",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 8,
+      "identifier": "932939e1-e902-4d78-9ea7-d5b4818b6f0e",
+      "left": "Crimson Tide Pods",
+      "right": "Whales",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 8,
+      "identifier": "3c8ac20f-9408-4c1c-8396-f500a5b07b3b",
+      "left": "Lucky Ducks",
+      "right": "Sharks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 8,
+      "identifier": "cd0eedd7-37d8-4254-b8b3-625ab8686cdc",
+      "left": "Neon Ninjas",
+      "right": "Bringers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 8,
+      "identifier": "96d4ae49-f24e-4458-8c9e-6bc23d4fadb2",
+      "left": "Rogue Squirrels",
+      "right": "Hammers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 8,
+      "identifier": "12168308-8678-45be-a883-8dd42b388057",
+      "left": "Pixel Pirates",
+      "right": "Midnight Mavericks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 9,
+      "identifier": "eef5888d-ae1b-480e-a6bb-7853abc658f7",
+      "left": "Deez Netz",
+      "right": "Otters",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 9,
+      "identifier": "a3ceedbd-27ce-49c5-9250-64feedf642e5",
+      "left": "Night Owls",
+      "right": "Whales",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 9,
+      "identifier": "c1785dfb-aa09-4c8f-b714-c5890f21f753",
+      "left": "Iron Wolves",
+      "right": "Sharks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 9,
+      "identifier": "eeba7df5-669e-4aba-b00c-4d97756c4267",
+      "left": "Crimson Tide Pods",
+      "right": "Bringers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 9,
+      "identifier": "08e688e3-fd05-4a5a-a82a-ec88ec249441",
+      "left": "Lucky Ducks",
+      "right": "Hammers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 9,
+      "identifier": "2a5f3bb3-074e-47d7-9efe-d39931351e5e",
+      "left": "Neon Ninjas",
+      "right": "Midnight Mavericks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 9,
+      "identifier": "5112c7ec-94f1-4e94-a85b-2e5686bf00f3",
+      "left": "Rogue Squirrels",
+      "right": "Pixel Pirates",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 10,
+      "identifier": "360a6ed4-1641-4f63-a72c-77e696388eb1",
+      "left": "Deez Netz",
+      "right": "Whales",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 10,
+      "identifier": "eb73dc64-93b5-4684-b9e6-0d16c44a78eb",
+      "left": "Otters",
+      "right": "Sharks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 10,
+      "identifier": "e13949a5-9b70-4af2-949d-615a2550d9e0",
+      "left": "Night Owls",
+      "right": "Bringers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 10,
+      "identifier": "3be66e10-6a86-44f7-8be3-4efa818a3a64",
+      "left": "Iron Wolves",
+      "right": "Hammers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 10,
+      "identifier": "776a6f33-78ea-4935-ad71-54773a03589b",
+      "left": "Crimson Tide Pods",
+      "right": "Midnight Mavericks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 10,
+      "identifier": "66bb3746-992a-4c46-8041-8a8b487cd5a0",
+      "left": "Lucky Ducks",
+      "right": "Pixel Pirates",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 10,
+      "identifier": "75ec68de-78d1-41b8-a3f4-464af573653f",
+      "left": "Neon Ninjas",
+      "right": "Rogue Squirrels",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 11,
+      "identifier": "35dc8e59-8a80-41b2-8ea5-8a6e651bfde5",
+      "left": "Deez Netz",
+      "right": "Sharks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 11,
+      "identifier": "4dae70d5-c45d-4dda-a113-734897edb58e",
+      "left": "Whales",
+      "right": "Bringers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 11,
+      "identifier": "6bd3580d-5496-4e49-9fc8-7a04be4a98ad",
+      "left": "Otters",
+      "right": "Hammers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 11,
+      "identifier": "f0bccd7b-a5c5-4f38-976c-e1611ab1eae4",
+      "left": "Night Owls",
+      "right": "Midnight Mavericks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 11,
+      "identifier": "696e58bb-59d5-4019-9caa-21414ce9ab1e",
+      "left": "Iron Wolves",
+      "right": "Pixel Pirates",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 11,
+      "identifier": "6a810f1b-169f-477c-93f9-b54f99e491bc",
+      "left": "Crimson Tide Pods",
+      "right": "Rogue Squirrels",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 11,
+      "identifier": "1c235f6e-4931-46b9-9970-f8c0324e0b37",
+      "left": "Lucky Ducks",
+      "right": "Neon Ninjas",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 12,
+      "identifier": "02359df6-c6fd-497d-874f-73546145d341",
+      "left": "Deez Netz",
+      "right": "Bringers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 12,
+      "identifier": "9f5975f7-0101-42c8-b080-823e6cd64c39",
+      "left": "Sharks",
+      "right": "Hammers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 12,
+      "identifier": "9e793496-b299-44b3-8042-e608ead306f5",
+      "left": "Whales",
+      "right": "Midnight Mavericks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 12,
+      "identifier": "dcbfefa8-e901-43e4-b0a8-cd0d55538285",
+      "left": "Otters",
+      "right": "Pixel Pirates",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 12,
+      "identifier": "a4e59f04-3cfe-475d-860c-6064a0ae459e",
+      "left": "Night Owls",
+      "right": "Rogue Squirrels",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 12,
+      "identifier": "c21201f0-da52-475f-9702-27b44a31326f",
+      "left": "Iron Wolves",
+      "right": "Neon Ninjas",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 12,
+      "identifier": "ddad1151-34a9-42a9-8c7f-d14f9f0e0a1b",
+      "left": "Crimson Tide Pods",
+      "right": "Lucky Ducks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 13,
+      "identifier": "c3e3b104-15f3-4a0a-bf78-3cf5e11cbcdb",
+      "left": "Deez Netz",
+      "right": "Hammers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 13,
+      "identifier": "e6db3ef3-3e52-494c-8b8e-8f54be5456c1",
+      "left": "Bringers",
+      "right": "Midnight Mavericks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 13,
+      "identifier": "e0c80d51-4459-41c2-a38a-19d242a6c47e",
+      "left": "Sharks",
+      "right": "Pixel Pirates",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 13,
+      "identifier": "17efe3ba-d12a-4eaa-87d6-effe54fcdd88",
+      "left": "Whales",
+      "right": "Rogue Squirrels",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 13,
+      "identifier": "7b111f08-612a-4d9e-8f2f-d77d40b8f492",
+      "left": "Otters",
+      "right": "Neon Ninjas",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 13,
+      "identifier": "eb2b6767-4b0c-48c0-bff6-5d85d48dd309",
+      "left": "Night Owls",
+      "right": "Lucky Ducks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 13,
+      "identifier": "12a41042-ed6c-45cb-971e-6a8b278a5925",
+      "left": "Iron Wolves",
+      "right": "Crimson Tide Pods",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 14,
+      "identifier": "96924cdd-9596-4efc-a30a-d3b899dcb099",
+      "left": "Midnight Mavericks",
+      "right": "Deez Netz",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 14,
+      "identifier": "3659377e-d330-4501-8a5c-6783abc4fa41",
+      "left": "Pixel Pirates",
+      "right": "Hammers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 14,
+      "identifier": "d72ec641-5756-4a49-a601-f67a900ee325",
+      "left": "Rogue Squirrels",
+      "right": "Bringers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 14,
+      "identifier": "de7d7194-0598-49d1-b074-7a3f8017cd72",
+      "left": "Neon Ninjas",
+      "right": "Sharks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 14,
+      "identifier": "658a41c9-9d64-4b6e-8238-0b4ca870e620",
+      "left": "Lucky Ducks",
+      "right": "Whales",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 14,
+      "identifier": "684d4588-9ad6-4fd5-8c41-59656e8e5472",
+      "left": "Crimson Tide Pods",
+      "right": "Otters",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 14,
+      "identifier": "67d0636c-1804-40b6-9ab7-3f8a605d782e",
+      "left": "Iron Wolves",
+      "right": "Night Owls",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 15,
+      "identifier": "bf4172e8-f0b9-4f63-8a9b-0d0fdbe24439",
+      "left": "Pixel Pirates",
+      "right": "Deez Netz",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 15,
+      "identifier": "c34c7134-7b10-4cec-951a-4855858cda4c",
+      "left": "Rogue Squirrels",
+      "right": "Midnight Mavericks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 15,
+      "identifier": "82cc9ab5-20a0-4a96-83c5-4e15349568a6",
+      "left": "Neon Ninjas",
+      "right": "Hammers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 15,
+      "identifier": "d0c38537-5f14-4bdf-bb53-802254979e23",
+      "left": "Lucky Ducks",
+      "right": "Bringers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 15,
+      "identifier": "ff9040b2-fb24-412b-8def-e606c81f0ff7",
+      "left": "Crimson Tide Pods",
+      "right": "Sharks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 15,
+      "identifier": "49c894bc-c536-46ee-a966-6cdbe4fdfcfd",
+      "left": "Iron Wolves",
+      "right": "Whales",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 15,
+      "identifier": "ca4ca9a1-8211-4801-ad93-431b2fdc2c13",
+      "left": "Night Owls",
+      "right": "Otters",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 16,
+      "identifier": "d5d07bd3-e459-488e-95bd-998555303f87",
+      "left": "Rogue Squirrels",
+      "right": "Deez Netz",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 16,
+      "identifier": "2b057489-c181-424a-9a47-d0513dcd6cae",
+      "left": "Neon Ninjas",
+      "right": "Pixel Pirates",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 16,
+      "identifier": "b0f6c9db-14f0-4e8b-b9e1-bd8d16befd9c",
+      "left": "Lucky Ducks",
+      "right": "Midnight Mavericks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 16,
+      "identifier": "2aa6dcbc-63e7-4ae2-8adf-5a717b7702b2",
+      "left": "Crimson Tide Pods",
+      "right": "Hammers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 16,
+      "identifier": "dada55ff-a4f4-4ad2-900e-f767a0f78f97",
+      "left": "Iron Wolves",
+      "right": "Bringers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 16,
+      "identifier": "c321028b-c3e1-44a3-aa05-e26dfe81aa99",
+      "left": "Night Owls",
+      "right": "Sharks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 16,
+      "identifier": "b2eaf711-6782-4e76-b181-65b58a244e0b",
+      "left": "Otters",
+      "right": "Whales",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 17,
+      "identifier": "6a4c52f3-513d-44c5-877d-fdad9d156455",
+      "left": "Neon Ninjas",
+      "right": "Deez Netz",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 17,
+      "identifier": "a22855da-1f39-44a3-b219-8cd6b9186960",
+      "left": "Lucky Ducks",
+      "right": "Rogue Squirrels",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 17,
+      "identifier": "d6359571-74f1-489a-abb8-7b49eddba774",
+      "left": "Crimson Tide Pods",
+      "right": "Pixel Pirates",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 17,
+      "identifier": "392cbdec-b96e-4780-ad44-9be48842c453",
+      "left": "Iron Wolves",
+      "right": "Midnight Mavericks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 17,
+      "identifier": "2debf714-0908-431c-9891-41fe9ef7aba6",
+      "left": "Night Owls",
+      "right": "Hammers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 17,
+      "identifier": "bcdcb7b8-0ab0-465d-a763-941cd57271f7",
+      "left": "Otters",
+      "right": "Bringers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 17,
+      "identifier": "e0191315-012e-4834-afda-46077f59465a",
+      "left": "Whales",
+      "right": "Sharks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 18,
+      "identifier": "b00d28dc-6730-4637-ae52-3a22562eb225",
+      "left": "Lucky Ducks",
+      "right": "Deez Netz",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 18,
+      "identifier": "b0ddcc44-3e58-48e1-8a84-44a07edfff89",
+      "left": "Crimson Tide Pods",
+      "right": "Neon Ninjas",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 18,
+      "identifier": "287c8392-be24-45ee-970c-0189c2fd7a81",
+      "left": "Iron Wolves",
+      "right": "Rogue Squirrels",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 18,
+      "identifier": "67c9ea2b-ced3-4f4e-b7af-6ed805b1f3d6",
+      "left": "Night Owls",
+      "right": "Pixel Pirates",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 18,
+      "identifier": "74382dbf-2625-4a48-9b96-776c083e2879",
+      "left": "Otters",
+      "right": "Midnight Mavericks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 18,
+      "identifier": "c27e44a9-31f0-4ea7-9ff5-7df1f0819ec6",
+      "left": "Whales",
+      "right": "Hammers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 18,
+      "identifier": "4a721606-e536-422d-ad62-343d6a8cbfaa",
+      "left": "Sharks",
+      "right": "Bringers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 19,
+      "identifier": "4865b77f-d099-493e-bfb2-85eb51922c1f",
+      "left": "Crimson Tide Pods",
+      "right": "Deez Netz",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 19,
+      "identifier": "69755de2-4d1b-4a74-9e01-2aa4212f6db9",
+      "left": "Iron Wolves",
+      "right": "Lucky Ducks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 19,
+      "identifier": "4f5f4602-c874-46ed-9780-19217a9d5986",
+      "left": "Night Owls",
+      "right": "Neon Ninjas",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 19,
+      "identifier": "163f9985-3a84-4167-afbb-6c2763faaffd",
+      "left": "Otters",
+      "right": "Rogue Squirrels",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 19,
+      "identifier": "f9a241fa-4bfa-42a1-bc73-f0bf7410374f",
+      "left": "Whales",
+      "right": "Pixel Pirates",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 19,
+      "identifier": "448b73f7-115a-4380-9f00-f2649b1bdc17",
+      "left": "Sharks",
+      "right": "Midnight Mavericks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 19,
+      "identifier": "b927e6bf-5922-48f4-a66b-dbcdadbc6b05",
+      "left": "Bringers",
+      "right": "Hammers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 20,
+      "identifier": "93b8f6fb-e005-4e52-b123-e37015de0808",
+      "left": "Iron Wolves",
+      "right": "Deez Netz",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 20,
+      "identifier": "4bf4d074-37d8-4538-af81-c5d3eeb76fdd",
+      "left": "Night Owls",
+      "right": "Crimson Tide Pods",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 20,
+      "identifier": "8c129a96-c6b2-4fae-bfef-cbddd8683279",
+      "left": "Otters",
+      "right": "Lucky Ducks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 20,
+      "identifier": "d5e1bb0f-346f-49b4-a158-0ce760f1e407",
+      "left": "Whales",
+      "right": "Neon Ninjas",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 20,
+      "identifier": "af6c26d3-6b0f-408b-a535-bdcfd4201a71",
+      "left": "Sharks",
+      "right": "Rogue Squirrels",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 20,
+      "identifier": "6dd3b085-820d-474b-8a46-868d58eac652",
+      "left": "Bringers",
+      "right": "Pixel Pirates",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 20,
+      "identifier": "ebae2a25-ac20-4907-9aef-ad8797479be7",
+      "left": "Hammers",
+      "right": "Midnight Mavericks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 21,
+      "identifier": "94b61db0-9a45-42f6-a77b-ac2955f034a9",
+      "left": "Night Owls",
+      "right": "Deez Netz",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 21,
+      "identifier": "a348d226-a700-4999-9346-0106b88b016c",
+      "left": "Otters",
+      "right": "Iron Wolves",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 21,
+      "identifier": "51b90ec2-b9e4-4fa3-8c42-fce9242c78be",
+      "left": "Whales",
+      "right": "Crimson Tide Pods",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 21,
+      "identifier": "b5c613d8-8ee7-4899-8eac-2d01bfe9e0ba",
+      "left": "Sharks",
+      "right": "Lucky Ducks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 21,
+      "identifier": "2c44e8cb-ac89-417f-87bc-b45583b616d5",
+      "left": "Bringers",
+      "right": "Neon Ninjas",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 21,
+      "identifier": "396baa39-2d56-4214-a6d0-e3b5e1d13607",
+      "left": "Hammers",
+      "right": "Rogue Squirrels",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 21,
+      "identifier": "1c5db860-3cba-4b00-8a46-c9aef9f57342",
+      "left": "Midnight Mavericks",
+      "right": "Pixel Pirates",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 22,
+      "identifier": "54a54d8f-bc2f-4663-a21e-99f4b469299c",
+      "left": "Otters",
+      "right": "Deez Netz",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 22,
+      "identifier": "578016d9-8c4c-4d37-b6af-7b404149caf3",
+      "left": "Whales",
+      "right": "Night Owls",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 22,
+      "identifier": "8839783f-3591-4c7d-b947-531a07eb49a4",
+      "left": "Sharks",
+      "right": "Iron Wolves",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 22,
+      "identifier": "a6c733cc-66d6-413c-a9b7-0a9986aa5ad1",
+      "left": "Bringers",
+      "right": "Crimson Tide Pods",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 22,
+      "identifier": "64a19431-2429-4cdf-bf01-f400a054392f",
+      "left": "Hammers",
+      "right": "Lucky Ducks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 22,
+      "identifier": "6ce7f6ee-b072-4f5e-8e29-ffb913462325",
+      "left": "Midnight Mavericks",
+      "right": "Neon Ninjas",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 22,
+      "identifier": "9b560d1a-0ba4-4beb-ab50-8a962b8e96f8",
+      "left": "Pixel Pirates",
+      "right": "Rogue Squirrels",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 23,
+      "identifier": "3c277c85-db4f-4808-a536-99af73f6f804",
+      "left": "Whales",
+      "right": "Deez Netz",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 23,
+      "identifier": "1e566e51-dd53-4215-9887-fd1bdd642f23",
+      "left": "Sharks",
+      "right": "Otters",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 23,
+      "identifier": "51c9cff4-219c-483b-b3e5-76a5faf24f21",
+      "left": "Bringers",
+      "right": "Night Owls",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 23,
+      "identifier": "2251ad41-ec22-4823-8900-19a59a39e92c",
+      "left": "Hammers",
+      "right": "Iron Wolves",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 23,
+      "identifier": "87878829-c351-4c52-999c-264fc74b5d70",
+      "left": "Midnight Mavericks",
+      "right": "Crimson Tide Pods",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 23,
+      "identifier": "9625f0ea-5203-4462-9edb-6605c8a6dae5",
+      "left": "Pixel Pirates",
+      "right": "Lucky Ducks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 23,
+      "identifier": "1c79c4df-32ef-4c46-8e47-6232c2b65cb6",
+      "left": "Rogue Squirrels",
+      "right": "Neon Ninjas",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 24,
+      "identifier": "165747dc-1f66-4be5-8301-1b2a99a0d5fa",
+      "left": "Sharks",
+      "right": "Deez Netz",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 24,
+      "identifier": "374cc744-5e65-43b8-af4f-466786064629",
+      "left": "Bringers",
+      "right": "Whales",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 24,
+      "identifier": "3e3e8ddd-a5d7-44c3-a7f7-640f42eaf38f",
+      "left": "Hammers",
+      "right": "Otters",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 24,
+      "identifier": "6980b028-db1d-42d2-934b-cb9a5e3e8239",
+      "left": "Midnight Mavericks",
+      "right": "Night Owls",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 24,
+      "identifier": "cdc3a267-8366-4736-9f90-f01561021bb5",
+      "left": "Pixel Pirates",
+      "right": "Iron Wolves",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 24,
+      "identifier": "a57e3b94-8a35-4b94-9ab4-d9551e89c170",
+      "left": "Rogue Squirrels",
+      "right": "Crimson Tide Pods",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 24,
+      "identifier": "85b5dbd3-055d-4808-887e-d9f9906730c8",
+      "left": "Neon Ninjas",
+      "right": "Lucky Ducks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 25,
+      "identifier": "eff847c7-3898-4d6a-b1e7-9c57a5200369",
+      "left": "Bringers",
+      "right": "Deez Netz",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 25,
+      "identifier": "a09bb762-78f5-45a9-b950-a2bc881ddd28",
+      "left": "Hammers",
+      "right": "Sharks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 25,
+      "identifier": "f8634fea-7e57-4c6a-a50a-ce3a6f203ec5",
+      "left": "Midnight Mavericks",
+      "right": "Whales",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 25,
+      "identifier": "5b42f20f-e4ba-4dc2-a8c1-1c0ee2e7da39",
+      "left": "Pixel Pirates",
+      "right": "Otters",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 25,
+      "identifier": "069f4ab0-f5f0-4563-b7c3-e352c17a9031",
+      "left": "Rogue Squirrels",
+      "right": "Night Owls",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 25,
+      "identifier": "431c9ce1-94b4-4148-b36f-478bbfe2c584",
+      "left": "Neon Ninjas",
+      "right": "Iron Wolves",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 25,
+      "identifier": "12d00642-43a6-47f6-8a09-deabf4c6ed72",
+      "left": "Lucky Ducks",
+      "right": "Crimson Tide Pods",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 26,
+      "identifier": "52db0ed5-7e51-4c4c-8bcb-e4449336fd92",
+      "left": "Hammers",
+      "right": "Deez Netz",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 26,
+      "identifier": "29b20d65-a8b3-4bfd-9ee0-24bd1662aab4",
+      "left": "Midnight Mavericks",
+      "right": "Bringers",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 26,
+      "identifier": "9454c7b9-840a-4754-9ef3-5aec9d02e0b2",
+      "left": "Pixel Pirates",
+      "right": "Sharks",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 26,
+      "identifier": "294e1508-ffd8-4741-b155-e858911cb74a",
+      "left": "Rogue Squirrels",
+      "right": "Whales",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 26,
+      "identifier": "a1692df4-b7e3-4fc9-9c1f-ab38440b778c",
+      "left": "Neon Ninjas",
+      "right": "Otters",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 26,
+      "identifier": "2c43b686-d832-43ab-a961-1bda503e5871",
+      "left": "Lucky Ducks",
+      "right": "Night Owls",
+      "lc": "#292929",
+      "rc": "#ebebeb"
+    },
+    {
+      "round": 26,
+      "identifier": "07d66993-94b5-481f-9e7d-ce66fe3f8612",
+      "left": "Crimson Tide Pods",
+      "right": "Iron Wolves",
       "lc": "#292929",
       "rc": "#ebebeb"
     }
   ],
-  "source": "podium"
+  "source": "shufflepolo"
 }
