@@ -1,6 +1,28 @@
-# Scorebored - Live Scoreboard System
+# Scorebored — Live Scoreboard System
 
-A real-time scoreboard application designed for bicycle polo tournaments and sports events. Features customizable team colors, persistent state, ATEM switcher integration, and a full tournament schedule manager.
+A real-time scoreboard application for bicycle polo tournaments and similar
+sports events. One Node server drives a live scoreboard overlay, a
+tournament schedule, an ATEM switcher, networking/bonding on the Pi, and
+score data pulled live from a tournament platform — all kept in sync over
+Socket.IO across every connected page.
+
+## Quick start
+
+```bash
+sudo apt update && sudo apt upgrade -y
+
+# Install Node.js 18+
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+git clone https://github.com/stillline/scorebored.git
+cd scorebored
+npm install
+node server.js
+```
+
+For running unattended on a Raspberry Pi (systemd service + kiosk
+display), see [docs/kiosk-display.md](docs/kiosk-display.md).
 
 ## Pages
 
@@ -8,9 +30,28 @@ A real-time scoreboard application designed for bicycle polo tournaments and spo
 |-----|---------|
 | `/control` | Main operator control panel |
 | `/display` | Clean scoreboard output (fullscreen/overlay) |
-| `/bracket` | Tournament schedule manager |
-| `/network` | Network and Speedify dashboard |
-| `/apchannel` | Wi-Fi access point channel selector |
+| `/bracket` | Tournament schedule manager + score-sync provider config |
+| `/editor` | Scorebug visual design editor |
+| `/teams` | Read-only roster viewer for the active sync provider |
+| `/bracket-viewer/:provider` | Per-provider bracket/standings viewer |
+| `/network` | Network dashboard (Wi-Fi AP, Speedify, RTMP, iPhone pairing) |
+| `/apchannel` | Wi-Fi access point channel selector (also reachable from `/network`) |
+| `/display-legacy` | Older SVG scorebug overlay, kept as a fallback |
+
+## Features
+
+- **[Control panel & tournament schedule](#control-panel-control)** —
+  running a game day-to-day (below)
+- **[ATEM switcher integration](docs/atem.md)** — commercial breaks,
+  downstream key management, audio muting
+- **[Score data syncing](docs/sync.md)** — Challonge, Podium, and
+  Shufflepolo live score/bracket feeds
+- **[Scorebug editor](docs/scorebug-editor.md)** — visual design and
+  preset system for the on-air scoreboard
+- **[Network dashboard](docs/network.md)** — Wi-Fi AP, Speedify bonding,
+  RTMP relay, iPhone tether pairing
+- **[Kiosk display & systemd service](docs/kiosk-display.md)** — Pi
+  autostart, fullscreen Chromium kiosk, server-as-a-service
 
 ---
 
@@ -27,13 +68,17 @@ The primary interface for running a game.
 - **Swap Sides** — mirrors left/right teams, scores, and colors
 - **Reset Game** — sets both scores to 0
 - **Prev Game / Next Game** — navigate through the tournament schedule; loads the next/previous matchup's teams and colors onto the scoreboard, resetting scores to 0. Saving a final score for the active matchup is done on the `/bracket` page (see below), not from the control panel.
-- **Commercial Break** — triggers ATEM switcher cut to graphics input with full audio management (see ATEM section)
+- **Commercial Break** — triggers ATEM switcher cut to graphics input with full audio management ([details](docs/atem.md))
 
----
+When a score-sync provider is enabled, live score/clock/penalty data from
+the platform takes over these fields automatically — see
+[docs/sync.md](docs/sync.md).
 
 ## Tournament Schedule (`/bracket`)
 
-Pre-populate all tournament matchups and manage results from one page.
+Pre-populate all tournament matchups and manage results from one page, or
+drive the schedule live from Challonge/Podium/Shufflepolo
+([docs/sync.md](docs/sync.md)).
 
 ### Layout
 
@@ -69,12 +114,6 @@ Each row shows:
 6. To correct a finalized result: change the score boxes on the bracket page and hit **Save** again
 7. To un-finalize a game: click `↺` — the game returns to normal appearance but retains whatever scores were entered
 
-### Default data
-
-The schedule comes pre-loaded with the Santo tournament (32 games, Grupo A + Grupo B). Default team colors are `#292929` and `#ebebeb`.
-
----
-
 ## Display (`/display`)
 
 Clean scoreboard output — fullscreen this on the display machine.
@@ -83,35 +122,7 @@ Clean scoreboard output — fullscreen this on the display machine.
 - Colored score boxes per team
 - Transparent background for chroma/luma keying in OBS or ATEM
 - Receives all updates via WebSocket; no manual refresh needed
-
----
-
-## ATEM Integration
-
-Connects to a Blackmagic ATEM Mini Pro ISO on startup.
-
-**Environment variables:**
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ATEM_IP` | `10.42.0.100` | ATEM IP address |
-| `GRAPHICS_INPUT` | `1` | HDMI input number for the scoreboard computer |
-| `DOWNSTREAM_KEY` | `1` | DSK number used for the scoreboard overlay |
-
-**Commercial break sequence:**
-
-1. Turns off the upstream key (USK)
-2. Fades out the downstream key (DSK)
-3. Auto-transitions to the graphics input
-4. Mutes all Fairlight audio inputs except the graphics HDMI
-5. Plays the selected video on the display page
-
-**End of break:**
-
-1. Cuts back to the previous camera input
-2. Turns the DSK back on
-3. Turns the USK back on
-4. Restores camera audio (mics remain muted for manual restore)
+- Renders whichever scorebug preset is currently active ([details](docs/scorebug-editor.md))
 
 ---
 
@@ -121,74 +132,30 @@ Connects to a Blackmagic ATEM Mini Pro ISO on startup.
 |------|---------|
 | `gamestate.json` | Live scoreboard state (scores, colors, ATEM status, active matchup index) |
 | `bracket.json` | Tournament schedule with all matchups, colors, and final scores |
+| `presets/` | Scorebug designs (see [docs/scorebug-editor.md](docs/scorebug-editor.md)) |
+| `*-config.json` (challonge/podium/shufflepolo) | Score-sync provider config (see [docs/sync.md](docs/sync.md)) |
 
-Both files are auto-created and updated at runtime. Do not edit while the server is running.
+All of the above are gitignored and auto-created at runtime. Do not edit
+them by hand while the server is running.
 
----
-
-## Installation (Raspberry Pi)
-
-```bash
-sudo apt update && sudo apt upgrade -y
-
-# Install Node.js 18+
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# Clone and install
-git clone https://github.com/stillline/scorebored.git
-cd scorebored
-npm install
-
-# Start
-node server.js
-```
-
-### Run as a systemd service
-
-```ini
-# /etc/systemd/system/scorebored.service
-[Unit]
-Description=Scorebored
-After=network.target
-
-[Service]
-Type=simple
-User=matthew
-WorkingDirectory=/home/matthew/bin/scorebored
-ExecStart=/usr/bin/node server.js
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable scorebored
-sudo systemctl start scorebored
-```
-
----
-
-## File Structure
+## File structure
 
 ```
 scorebored/
-├── server.js              # Main server (Express + Socket.IO + ATEM)
-├── package.json
-├── gamestate.json         # Auto-generated live state
-├── bracket.json           # Auto-generated tournament schedule + results
-└── public/
-    ├── control.html       # Operator control panel
-    ├── display.html       # Scoreboard display output
-    ├── bracket.html       # Tournament schedule manager
-    ├── network.html       # Network / Speedify dashboard
-    └── apchannel.html     # Wi-Fi AP channel selector
+├── server.js              # Main server (Express + Socket.IO + routes)
+├── lib/
+│   ├── atem.js             # ATEM switcher control
+│   ├── network.js          # Wi-Fi AP / scan+connect / iPhone pairing
+│   ├── rtmp.js              # RTMP destination editor
+│   ├── speedify.js          # Speedify bonding stats
+│   └── sync.js              # Shared score-sync provider lifecycle
+├── challonge/               # Challonge sync provider subprocess
+├── podium_sync/             # Podium sync provider subprocess (vendors libpodium)
+├── shufflepolo_sync/        # Shufflepolo sync provider subprocess
+├── public/                  # All pages (control, display, bracket, editor, ...)
+├── presets/                 # Scorebug designs (gitignored, runtime)
+└── docs/                    # Per-feature documentation
 ```
-
----
 
 ## Troubleshooting
 
@@ -203,7 +170,4 @@ sudo pkill node
 - Check firewall: `sudo ufw status`
 - Find Pi IP: `ip addr show`
 
-**ATEM not connecting:**
-- Verify `ATEM_IP` env var or default `10.42.0.100`
-- Check ATEM is powered and on the same network
-- The server retries automatically; use the Connect button on the control panel
+**ATEM not connecting:** see [docs/atem.md](docs/atem.md#troubleshooting).
