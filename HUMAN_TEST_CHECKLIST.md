@@ -46,10 +46,32 @@ anything) and how it was fixed.
 - [ ] **Podium**, during a real live-stream event: confirm score/clock
       pushes still land on the display correctly through the new generic
       `/api/sync/podium/push` route.
-- [ ] **Shufflepolo** (brand new, never tested against a real tournament at
-      all): run it against one real published Shufflepolo tournament end to
-      end — snapshot read, realtime subscribe, live score/clock showing up
-      on `/display`, bracket.json sync.
+- [x] **Shufflepolo** — run end to end against a real published tournament
+      ("NAH Testing", LosAngelesBikePolo): snapshot read, realtime subscribe,
+      live score/clock showing up on `/display`, bracket.json sync all
+      confirmed working. Two things broke and were fixed along the way:
+      (1) `shufflepolo-config.json` had the full tournament page URL pasted
+      into `tournamentId` instead of the bare UUID, which the feed API
+      rejects with `400 invalid_tournament` — fixed the config, and added a
+      `normalizeField` hook (`lib/sync.js` + `server.js`) so the shufflepolo
+      provider now extracts the UUID automatically if a full URL is pasted
+      in via the bracket page UI. (2) An orphaned `node server.js` process
+      from an earlier manual run (not managed by systemd) was still running
+      alongside the real systemd-managed one, and its own stale shufflepolo
+      child process was racing to overwrite `state/status.json` with the old
+      error — killed the orphan tree, no code change needed for that part.
+      (3) `/display`'s clock renderer only understood Podium's clock shape
+      (`{running, phase, remaining_seconds}`); Shufflepolo's is completely
+      different (`{status, elapsed_seconds, running_since,
+      duration_seconds}`), passed through to `gameState.clock` untranslated
+      — fixed by teaching `renderClockNow()` in `public/display.html` to
+      detect and render both shapes. Confirmed live against a running game
+      (Deez Netz vs Hammers), countdown ticking correctly on both a desktop
+      browser and the kiosk's physical HDMI output. Note for next time: the
+      kiosk Chromium (launched once by `launch-display.sh`, Wayland/labwc,
+      no auto-reload) doesn't pick up static file changes on its own —
+      `pkill -x chromium` is the way to force it to reload, since the
+      script's own watchdog relaunches it immediately.
 - [ ] **teams.html / bracket-viewer.html** still work against whichever
       provider is actually enabled (currently only re-pointed at
       `/api/sync/challonge/*` — not yet provider-agnostic, that's Phase 6).

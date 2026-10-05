@@ -43,6 +43,14 @@ done
 pkill -x chromium 2>/dev/null || true
 sleep 0.5
 
+# Clear stale singleton-lock artifacts. A hard reset (e.g. the Pi's hardware
+# watchdog firing) never lets Chromium exit cleanly, so these can point at a
+# PID from a previous boot and make the next launch hang/misbehave resolving
+# the lock instead of starting normally.
+rm -f /tmp/chromium-atem-display/SingletonLock \
+      /tmp/chromium-atem-display/SingletonCookie \
+      /tmp/chromium-atem-display/SingletonSocket
+
 # Launch Chromium in kiosk mode on the primary X display (Xwayland → HDMI-A-2)
 chromium \
     --kiosk \

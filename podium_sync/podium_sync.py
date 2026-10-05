@@ -111,7 +111,7 @@ def penalty_to_dict(p):
     }
 
 
-def build_live_snapshot(state: State):
+def build_live_snapshot(state: State, last_goal=None):
     game = state.game
     if game is None:
         return {
@@ -159,6 +159,11 @@ def build_live_snapshot(state: State):
             "home": penalties_home,
             "away": penalties_away,
         },
+        # Only set on the specific push that announces a new goal (the
+        # "goal" trigger) - server.js reads this to label the feed entry
+        # with who scored. Not derived from game.goals (cumulative), so it
+        # never resurfaces on later unrelated pushes.
+        "last_goal": last_goal,
     }
 
 
@@ -231,8 +236,8 @@ def write_bracket_state(tournament):
     write_json_atomic_path(APP_BRACKET_FILE, {"matchups": app_matchups, "source": "podium"})
 
 
-def push_snapshot(state: State) -> None:
-    snapshot = build_live_snapshot(state)
+def push_snapshot(state: State, last_goal=None) -> None:
+    snapshot = build_live_snapshot(state, last_goal=last_goal)
     try:
         push_json(PUSH_URL, snapshot)
     except (urllib.error.URLError, urllib.error.HTTPError, OSError) as e:
@@ -261,7 +266,14 @@ def main():
                 write_participants(state.tournament)
                 write_bracket_state(state.tournament)
 
-            push_snapshot(state)
+            last_goal = None
+            if trigger == "goal":
+                last_goal = {
+                    "side": event.side,
+                    "player": event.player.name if event.player else None,
+                }
+
+            push_snapshot(state, last_goal=last_goal)
 
             write_status("live", connected=True)
             print(f"[{time.strftime('%H:%M:%S')}] {trigger}", flush=True)

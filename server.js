@@ -4,6 +4,9 @@ const https = require('https');
 const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const multer = require('multer');
+const sharp = require('sharp');
 const { exec } = require('child_process');
 const { SyncManager } = require('./lib/sync');
 const { startSpeedifyStats, registerSpeedifySocketHandlers } = require('./lib/speedify');
@@ -18,6 +21,8 @@ const io = socketIo(server);
 const PORT = process.env.PORT || 3000;
 const STATE_FILE = path.join(__dirname, 'gamestate.json');
 const BRACKET_FILE = path.join(__dirname, 'bracket.json');
+const PRESETS_DIR = path.join(__dirname, 'presets');
+const LOGOS_DIR = path.join(__dirname, 'public', 'logos');
 
 // ATEM Configuration
 const ATEM_IP = process.env.ATEM_IP || '10.42.0.100'; // Default ATEM IP
@@ -40,6 +45,10 @@ const defaultGameState = {
   clock: null,
   penalties: null,
   timeouts: null,
+  status: null,
+  has_game: false,
+  feed: [],
+  activePresetId: null,
   commercialBreak: {
     active: false,
     videoPath: '',
@@ -59,6 +68,15 @@ const defaultGameState = {
 
 // Load saved state or use default
 let gameState = loadGameState();
+
+// Identifies this process instance, fresh on every boot (never persisted
+// meaningfully - loadGameState may read a stale one back from disk, but
+// it's immediately overwritten here). Rides along on every gameUpdate push
+// since it's just a field on the one persistent gameState object. Lets a
+// client (the kiosk display, in particular) tell "the server restarted"
+// apart from "my socket reconnected after a network blip" - see
+// display.html's reloadIfServerRestarted().
+gameState._serverInstanceId = crypto.randomUUID();
 
 function loadGameState() {
   try {
@@ -82,6 +100,142 @@ function saveGameState() {
   } catch (error) {
     console.error('Error saving game state:', error);
   }
+}
+
+let nextFeedId = 1;
+function pushFeedEntry(type, fields) {
+  gameState.feed.push({ id: nextFeedId++, type, at: new Date().toISOString(), ...fields });
+}
+
+function activePenaltyIds(penalties) {
+  return new Set((penalties || []).map(p => p.id).filter(id => id != null));
+}
+
+function byId(list) {
+  return new Map((list || []).filter(e => e.id != null).map(e => [e.id, e]));
+}
+
+// Podium's penalty severity enum ("turnover"|"minor"|"major"|"ejection",
+// see podium_sync/podium/types.py) doubles as the feed's own vocabulary -
+// Shufflepolo's penalty codes are normalized to the same set in
+// applyShufflepoloSnapshot. One feedLabel() in scorebug-render.js can then
+// render either provider's penalties without knowing which one is live.
+function pushPenaltyFeedEntry(side, penalty) {
+  const type = penalty.severity === 'turnover' ? 'turnover'
+    : penalty.severity === 'minor' ? 'penalty_minor'
+    : penalty.severity === 'major' ? 'penalty_major'
+    : penalty.severity === 'ejection' ? 'ejection'
+    : 'penalty_start'; // unknown severity - fall back rather than drop it
+  pushFeedEntry(type, { side, player: penalty.player || null });
+}
+
+// Diffs a before/after pair of the fields every mutation site can touch and
+// appends feed entries for whatever changed. Generic across providers and
+// manual control actions alike - it only looks at gameState shape, never at
+// which call site produced the change.
+function diffAndLogFeed(before, after, { skipScoreDiff } = {}) {
+  if (!skipScoreDiff) {
+    // Podium announces the scorer out-of-band via _lastGoal (set only on
+    // the specific push for that goal - see applyPodiumSnapshot); fall back
+    // to an unattributed goal when it's not there (manual +/- controls,
+    // Shufflepolo's score fields, or a Podium push with no player).
+    const lastGoal = after._lastGoal;
+    if (after.leftScore > before.leftScore) pushFeedEntry('goal', { side: 'left', player: (lastGoal && lastGoal.side === 'home') ? lastGoal.player : null });
+    if (after.leftScore < before.leftScore) pushFeedEntry('goal_removed', { side: 'left' });
+    if (after.rightScore > before.rightScore) pushFeedEntry('goal', { side: 'right', player: (lastGoal && lastGoal.side === 'away') ? lastGoal.player : null });
+    if (after.rightScore < before.rightScore) pushFeedEntry('goal_removed', { side: 'right' });
+  }
+
+  const beforeTO = before.timeouts || {};
+  const afterTO = after.timeouts || {};
+  if (afterTO.left != null && beforeTO.left != null && afterTO.left < beforeTO.left) {
+    pushFeedEntry('timeout', { side: 'left' });
+  }
+  if (afterTO.right != null && beforeTO.right != null && afterTO.right < beforeTO.right) {
+    pushFeedEntry('timeout', { side: 'right' });
+  }
+
+  for (const side of ['left', 'right']) {
+    const beforeIds = activePenaltyIds(before.penalties && before.penalties[side]);
+    const afterPenalties = (after.penalties && after.penalties[side]) || [];
+    for (const penalty of afterPenalties) {
+      if (penalty.id != null && !beforeIds.has(penalty.id)) pushPenaltyFeedEntry(side, penalty);
+    }
+  }
+
+  // Shufflepolo-only: full cumulative goals/penalties/timeouts logs, set by
+  // applyShufflepoloSnapshot. Diffed by id against the previous push's log
+  // rather than against gameState.penalties/leftScore - Shufflepolo's
+  // penalty log is historical (never shrinks, unlike Podium's "active
+  // right now" list) and goals need per-scorer attribution the plain score
+  // diff above can't give, so this entirely replaces the generic score/
+  // penalty diff for whichever sides Shufflepolo is driving.
+  const beforeRaw = before._rawEvents;
+  const afterRaw = after._rawEvents;
+  if (afterRaw) {
+    const beforeGoals = byId(beforeRaw && beforeRaw.goals);
+    for (const goal of afterRaw.goals) {
+      if (!beforeGoals.has(goal.id)) pushFeedEntry('goal', { side: goal.side, player: goal.player });
+    }
+    const beforeTimeouts = byId(beforeRaw && beforeRaw.timeouts);
+    for (const timeout of afterRaw.timeouts) {
+      if (!beforeTimeouts.has(timeout.id)) pushFeedEntry('timeout', { side: timeout.side });
+    }
+    const beforePenalties = byId(beforeRaw && beforeRaw.penalties);
+    for (const penalty of afterRaw.penalties) {
+      if (!beforePenalties.has(penalty.id)) pushPenaltyFeedEntry(penalty.side, penalty);
+    }
+  }
+
+  const beforePhase = before.clock && before.clock.phase;
+  const afterPhase = after.clock && after.clock.phase;
+  if (afterPhase && beforePhase && afterPhase !== beforePhase) {
+    pushFeedEntry('period', { phase: afterPhase });
+  }
+
+  const beforeLive = before.status === 'in_progress';
+  const afterLive = after.status === 'in_progress';
+  // Shufflepolo has no status field - has_game is the closest proxy for
+  // "a game is on court right now" that provider exposes.
+  const beforeHasGame = before.status != null ? beforeLive : before.has_game;
+  const afterHasGame = after.status != null ? afterLive : after.has_game;
+
+  if (beforeHasGame && !afterHasGame) {
+    pushFeedEntry('game_end', { leftTeam: after.leftTeam, rightTeam: after.rightTeam, leftScore: after.leftScore, rightScore: after.rightScore });
+  } else if (!beforeHasGame && afterHasGame) {
+    pushFeedEntry('game_start', { leftTeam: after.leftTeam, rightTeam: after.rightTeam });
+  }
+}
+
+// Every mutation site should go through this rather than calling
+// saveGameState()/io.emit() directly, so the feed diff always runs against
+// a consistent before/after snapshot and every site gets it for free.
+function commitGameState(mutate, { skipScoreDiff } = {}) {
+  const before = {
+    leftScore: gameState.leftScore,
+    rightScore: gameState.rightScore,
+    timeouts: gameState.timeouts ? { ...gameState.timeouts } : null,
+    penalties: gameState.penalties
+      ? { left: [...(gameState.penalties.left || [])], right: [...(gameState.penalties.right || [])] }
+      : null,
+    clock: gameState.clock ? { phase: gameState.clock.phase } : null,
+    status: gameState.status,
+    has_game: gameState.has_game,
+    _lastGoal: null, // Podium's goal attribution is per-push, not cumulative - never diffed against a prior "before"
+    _rawEvents: gameState._rawEvents
+      ? {
+          goals: [...gameState._rawEvents.goals],
+          timeouts: [...gameState._rawEvents.timeouts],
+          penalties: [...gameState._rawEvents.penalties],
+        }
+      : null,
+  };
+
+  mutate();
+
+  diffAndLogFeed(before, gameState, { skipScoreDiff });
+  saveGameState();
+  io.emit('gameUpdate', gameState);
 }
 
 function getAvailableVideos() {
@@ -176,11 +330,12 @@ syncProviders.podium = new SyncManager({
 // polled, unlike Challonge. On process exit, clear the live fields it owns
 // rather than leaving a stale clock/penalties on screen.
 syncProviders.podium.onExit = () => {
-  gameState.clock = null;
-  gameState.penalties = null;
-  gameState.timeouts = null;
-  saveGameState();
-  io.emit('gameUpdate', gameState);
+  commitGameState(() => {
+    gameState.clock = null;
+    gameState.penalties = null;
+    gameState.timeouts = null;
+    gameState.status = null;
+  });
 };
 
 syncProviders.shufflepolo = new SyncManager({
@@ -192,6 +347,14 @@ syncProviders.shufflepolo = new SyncManager({
   configDefaults: { tournamentId: '', feedUrl: '', enabled: false },
   requiredFields: ['tournamentId'],
   stateDir: path.join(__dirname, 'shufflepolo_sync', 'state'),
+  // Accepts a pasted tournament page URL (https://shufflepolo.com/t/<uuid>)
+  // as well as a bare UUID, since that's the only place the UUID is visible
+  // to the operator (Shufflepolo's feed has no list/lookup endpoint).
+  normalizeField: (key, value) => {
+    if (key !== 'tournamentId') return value;
+    const match = value.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    return match ? match[0] : value;
+  },
   buildEnv: (config) => ({
     SHUFFLEPOLO_TOURNAMENT: config.tournamentId,
     ...(config.feedUrl ? { SHUFFLEPOLO_FEED_URL: config.feedUrl } : {}),
@@ -205,9 +368,10 @@ syncProviders.shufflepolo = new SyncManager({
   }),
 });
 syncProviders.shufflepolo.onExit = () => {
-  gameState.clock = null;
-  saveGameState();
-  io.emit('gameUpdate', gameState);
+  commitGameState(() => {
+    gameState.clock = null;
+    gameState.has_game = false;
+  });
 };
 
 // One-off read-only lookup of all tournaments visible to an API key, so the
@@ -259,6 +423,12 @@ function listChallongeTournaments(apiKey) {
 // regardless of which physical side Podium calls "home".
 function applyPodiumSnapshot(snapshot) {
   gameState.clock = snapshot.clock || null;
+  gameState.status = snapshot.has_game ? snapshot.status : null;
+  // Transient, not diffed by id: only set on the specific push that
+  // announces a new goal (podium_sync.py's "goal" trigger), so
+  // diffAndLogFeed can label that one feed entry with the scorer and never
+  // needs to track a cumulative goal log the way Shufflepolo's does.
+  gameState._lastGoal = snapshot.last_goal || null;
 
   if (!snapshot.has_game) {
     gameState.penalties = null;
@@ -288,13 +458,80 @@ function applyPodiumSnapshot(snapshot) {
   }
 }
 
+// Shufflepolo's penalty `code` -> the severity vocabulary shared with
+// Podium (which reports this as `severity` directly). See
+// shufflepolo_sync/state/bracket.json for confirmed real-world codes.
+const SHUFFLEPOLO_PENALTY_CODE = {
+  bt: 'turnover',
+  mi: 'minor',
+  ma: 'major',
+  pm: 'ejection',
+};
+
 // Applies a live snapshot from shufflepolo_sync.js to gameState. Shufflepolo
 // reports team1/team2 (not home/away like Podium), but the same
-// sidesSwapped-respecting mapping applies.
+// sidesSwapped-respecting mapping applies. Unlike Podium (which reports only
+// currently-active penalties and a single just-happened goal), Shufflepolo's
+// feed hands back the game's full cumulative goals/penalties/timeouts logs
+// on every push - diffAndLogFeed diffs those by id against what it logged
+// last time, same idea as Podium's active-penalty-set diff.
 function applyShufflepoloSnapshot(snapshot) {
-  gameState.clock = snapshot.clock || null;
+  // clock_offset_ms rides along on gameState.clock itself (not a separate
+  // top-level field) so it survives the existing `{...currentClock,
+  // localAnchorAt}` spread in display.html/editor.html without those call
+  // sites needing to know about it individually - see computeClockDisplay
+  // in scorebug-render.js for how it's used.
+  //
+  // This is shufflepolo_sync.js's own measured offset (their server's clock
+  // minus this device's, from a t0/t1-bracketed round trip against the
+  // actual HTTP request - see updateClockOffset there), NOT a raw
+  // server_now timestamp. Per a Shufflepolo dev's own analysis of our
+  // drift: computing "now minus server_now" this far downstream (after
+  // this process's own POST to this server, then this server's socket
+  // broadcast to the browser) would measure the offset against a
+  // server_now that's already stale by however long those extra hops
+  // took, re-introducing per-hop timing error on every single push. The
+  // offset is measured once, close to the real round trip, and only ever
+  // added from here on - nothing downstream recomputes it.
+  gameState.clock = snapshot.clock ? { ...snapshot.clock, clock_offset_ms: snapshot.clock_offset_ms ?? null } : null;
+  gameState.has_game = !!snapshot.has_game;
 
+  // Deliberately NOT resetting _rawEvents to null here. has_game flips to
+  // false any time Shufflepolo's live[] briefly comes up empty (between
+  // games, or a transient gap in what their feed considers "live" right
+  // now) - nulling the goals/penalties/timeouts log on every such blip
+  // means the NEXT has_game:true push has no prior history to diff
+  // against, so diffAndLogFeed (which only looks at ids it already knows
+  // about) treats every goal/penalty the game has ever had as brand new
+  // and replays the whole match into the kill feed at once. Keeping the
+  // last known log around means a genuinely new game (different goal ids
+  // entirely) still diffs correctly - its first push just logs all of
+  // its own goals as new, same as any other id was never seen.
   if (!snapshot.has_game) return;
+
+  const sideForTeamId = (teamId) => {
+    const isTeam1 = teamId === snapshot.team1_id;
+    if (gameState.sidesSwapped) return isTeam1 ? 'right' : 'left';
+    return isTeam1 ? 'left' : 'right';
+  };
+
+  gameState._rawEvents = {
+    goals: (snapshot.goals || []).map(g => ({
+      id: g.id,
+      side: sideForTeamId(g.team_id),
+      player: g.player ? g.player.name : null,
+    })),
+    timeouts: (snapshot.timeouts || []).map(t => ({
+      id: t.id,
+      side: sideForTeamId(t.team_id),
+    })),
+    penalties: (snapshot.penalties || []).map(p => ({
+      id: p.id,
+      side: sideForTeamId(p.team_id),
+      player: p.player ? p.player.name : null,
+      severity: SHUFFLEPOLO_PENALTY_CODE[p.code] || p.code,
+    })),
+  };
 
   if (gameState.sidesSwapped) {
     gameState.leftTeam = snapshot.team2.name;
@@ -324,8 +561,18 @@ app.get('/display', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'display.html'));
 });
 
+// Retired SVG scorebug overlay, kept reachable in case the new barebones
+// one needs a quick fallback during the visual redesign.
+app.get('/display-legacy', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'display-legacy.html'));
+});
+
 app.get('/control', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'control.html'));
+});
+
+app.get('/editor', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'editor.html'));
 });
 
 app.get('/network', (req, res) => {
@@ -402,15 +649,22 @@ const SYNC_PUSH_HANDLERS = {
   shufflepolo: applyShufflepoloSnapshot,
 };
 
+// Shufflepolo's score changes are fully covered by its own cumulative
+// `goals` log (diffed in diffAndLogFeed via _rawEvents, with scorer
+// attribution) - running the generic score diff too would double-log every
+// goal. Podium has no such log (only a per-push _lastGoal), so it still
+// needs the generic diff.
+const SYNC_PUSH_OPTIONS = {
+  shufflepolo: { skipScoreDiff: true },
+};
+
 app.post('/api/sync/:provider/push', express.json(), (req, res) => {
   const applySnapshot = SYNC_PUSH_HANDLERS[req.params.provider];
   if (!applySnapshot) {
     return res.status(404).json({ error: `"${req.params.provider}" does not accept pushes` });
   }
   try {
-    applySnapshot(req.body);
-    saveGameState();
-    io.emit('gameUpdate', gameState);
+    commitGameState(() => applySnapshot(req.body), SYNC_PUSH_OPTIONS[req.params.provider]);
     res.json({ ok: true });
   } catch (error) {
     console.error(`Error applying ${req.params.provider} push:`, error);
@@ -445,6 +699,220 @@ app.get('/api/videos', (req, res) => {
   res.json(videos);
 });
 
+// ── Scorebug presets ──
+// One JSON file per preset in presets/, named <id>.json. A directory rather
+// than a single array file (like bracket.json) so concurrent saves/deletes
+// never need a read-modify-write of a shared array, and delete is a plain
+// unlink.
+//
+// Each preset holds its own version history (preset.versions[], 1-indexed
+// by `version`) rather than being a single mutable document. Saving in the
+// editor always APPENDS a new version - it never overwrites one - so a
+// draft never clobbers what's actually on air. preset.activeVersion is
+// which version this preset currently points to when IT is the live
+// preset (gameState.activePresetId); switching the live preset or rolling
+// back to an older version both just update this field via
+// PUT /api/presets/:id/active-version, same instant-cut broadcast
+// semantics as everything else in gameState.
+
+function presetPath(id) {
+  return path.join(PRESETS_DIR, `${id}.json`);
+}
+
+function isValidPresetId(id) {
+  return typeof id === 'string' && /^[a-zA-Z0-9_-]+$/.test(id);
+}
+
+function nextUnnamedPresetName() {
+  const files = fs.existsSync(PRESETS_DIR) ? fs.readdirSync(PRESETS_DIR).filter(f => f.endsWith('.json')) : [];
+  let highest = 0;
+  for (const f of files) {
+    try {
+      const preset = JSON.parse(fs.readFileSync(path.join(PRESETS_DIR, f), 'utf8'));
+      const m = /^Unnamed-Preset_(\d+)$/.exec(preset.name || '');
+      if (m) highest = Math.max(highest, parseInt(m[1], 10));
+    } catch (e) { /* skip unreadable files */ }
+  }
+  return 'Unnamed-Preset_' + String(highest + 1).padStart(2, '0');
+}
+
+function activeVersionOf(preset) {
+  return (preset.versions || []).find(v => v.version === preset.activeVersion) || null;
+}
+
+app.get('/api/presets', (req, res) => {
+  try {
+    if (!fs.existsSync(PRESETS_DIR)) return res.json([]);
+    const files = fs.readdirSync(PRESETS_DIR).filter(f => f.endsWith('.json'));
+    const summaries = files.map(f => {
+      const preset = JSON.parse(fs.readFileSync(path.join(PRESETS_DIR, f), 'utf8'));
+      return {
+        id: preset.id,
+        name: preset.name,
+        updatedAt: preset.updatedAt,
+        versionCount: (preset.versions || []).length,
+        activeVersion: preset.activeVersion,
+      };
+    });
+    res.json(summaries);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/presets/:id', (req, res) => {
+  if (!isValidPresetId(req.params.id)) return res.status(400).json({ error: 'Invalid preset id' });
+  try {
+    const filePath = presetPath(req.params.id);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'No such preset' });
+    res.json(JSON.parse(fs.readFileSync(filePath, 'utf8')));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Creates a new preset with one version (version 1). Body carries that
+// first version's {canvas, elements}; name defaults to an auto-numbered
+// Unnamed-Preset_NN when not given or blank.
+app.post('/api/presets', express.json(), (req, res) => {
+  try {
+    fs.mkdirSync(PRESETS_DIR, { recursive: true });
+    const id = 'preset_' + crypto.randomBytes(4).toString('hex');
+    const now = new Date().toISOString();
+    const name = (req.body.name || '').trim() || nextUnnamedPresetName();
+    const preset = {
+      id,
+      name,
+      versions: [{ version: 1, canvas: req.body.canvas, elements: req.body.elements || [], createdAt: now }],
+      activeVersion: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    fs.writeFileSync(presetPath(id), JSON.stringify(preset, null, 2));
+    res.json(preset);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Appends a new version. Never overwrites an existing version, so this is
+// always a non-destructive "save as draft" - rolling it out live is a
+// separate, explicit step (PUT .../active-version).
+app.post('/api/presets/:id/versions', express.json(), (req, res) => {
+  if (!isValidPresetId(req.params.id)) return res.status(400).json({ error: 'Invalid preset id' });
+  try {
+    const filePath = presetPath(req.params.id);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'No such preset' });
+    const preset = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const now = new Date().toISOString();
+    const nextVersion = preset.versions.reduce((max, v) => Math.max(max, v.version), 0) + 1;
+    preset.versions.push({ version: nextVersion, canvas: req.body.canvas, elements: req.body.elements || [], createdAt: now });
+    if (typeof req.body.name === 'string' && req.body.name.trim()) preset.name = req.body.name.trim();
+    preset.updatedAt = now;
+    fs.writeFileSync(filePath, JSON.stringify(preset, null, 2));
+    res.json(preset);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Points this preset at a specific version - used both for "I like this
+// draft, use it" right after saving, and for rolling back to any older
+// version later. Does NOT by itself make the preset live on the broadcast;
+// that's gameState.activePresetId (POST /api/presets/:id/versions above
+// leaves that untouched), set via the existing setActivePreset socket
+// event. If this preset happens to already be the live one, re-pointing
+// its activeVersion here is what the live display actually re-renders
+// from on its next poll/gameUpdate.
+app.put('/api/presets/:id/active-version', express.json(), (req, res) => {
+  if (!isValidPresetId(req.params.id)) return res.status(400).json({ error: 'Invalid preset id' });
+  const version = parseInt(req.body.version, 10);
+  if (!Number.isInteger(version)) return res.status(400).json({ error: 'Invalid version' });
+  try {
+    const filePath = presetPath(req.params.id);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'No such preset' });
+    const preset = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (!preset.versions.some(v => v.version === version)) return res.status(404).json({ error: 'No such version' });
+    preset.activeVersion = version;
+    preset.updatedAt = new Date().toISOString();
+    fs.writeFileSync(filePath, JSON.stringify(preset, null, 2));
+    res.json(preset);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/presets/:id', (req, res) => {
+  if (!isValidPresetId(req.params.id)) return res.status(400).json({ error: 'Invalid preset id' });
+  try {
+    const filePath = presetPath(req.params.id);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'No such preset' });
+    fs.unlinkSync(filePath);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Logo uploads ──
+// Served statically from public/logos/ (same free-ride as public/videos/ -
+// express.static('public') already covers it, no extra route needed to
+// serve them back out).
+//
+// The ATEM keys on luma (black = transparent), never true alpha over HDMI.
+// A naive <img> of an uploaded PNG would only be correct if nothing but the
+// black stage ever sits behind it - any semi-transparent/anti-aliased edge
+// pixel blends to dark GRAY in the source file, not black, which reads as a
+// visible fringe/halo on a hard luma key even though it looks fine in a
+// browser. So every upload is normalized here, once, rather than trusting
+// every future render site to get the compositing right:
+//   1. Hard-threshold alpha (>=128 -> fully opaque, <128 -> fully
+//      transparent) BEFORE flattening. flatten() alone still alpha-blends
+//      partial-transparency pixels to gray; thresholding first means only
+//      pure black or pure source color ever reaches the flatten step.
+//   2. flatten() the thresholded image against true #000000, producing a
+//      3-channel (no-alpha) PNG that's correct for luma key regardless of
+//      how the original file was exported or matted.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    cb(null, file.mimetype === 'image/png');
+  },
+});
+
+app.post('/api/logos', upload.single('logo'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No PNG file provided (field name must be "logo")' });
+  try {
+    fs.mkdirSync(LOGOS_DIR, { recursive: true });
+
+    const img = sharp(req.file.buffer).ensureAlpha();
+    const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
+    for (let i = 0; i < data.length; i += info.channels) {
+      data[i + 3] = data[i + 3] < 128 ? 0 : 255;
+    }
+    const thresholded = sharp(data, { raw: { width: info.width, height: info.height, channels: info.channels } });
+    const flattened = await thresholded.flatten({ background: '#000000' }).png().toBuffer();
+
+    const assetId = 'logo_' + crypto.randomBytes(4).toString('hex') + '.png';
+    fs.writeFileSync(path.join(LOGOS_DIR, assetId), flattened);
+    res.json({ assetId, width: info.width, height: info.height });
+  } catch (e) {
+    console.error('Logo upload failed:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/logos', (req, res) => {
+  try {
+    if (!fs.existsSync(LOGOS_DIR)) return res.json([]);
+    const files = fs.readdirSync(LOGOS_DIR).filter(f => f.endsWith('.png'));
+    res.json(files.map(f => ({ assetId: f })));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // HTTP API for score updates (used by keyboard controller)
 app.post('/api/score/:side/:change', (req, res) => {
   const { side, change } = req.params;
@@ -454,14 +922,13 @@ app.post('/api/score/:side/:change', (req, res) => {
     return res.status(400).json({ error: 'Invalid side or change value' });
   }
 
-  if (side === 'left') {
-    gameState.leftScore = Math.max(0, gameState.leftScore + delta);
-  } else {
-    gameState.rightScore = Math.max(0, gameState.rightScore + delta);
-  }
-
-  saveGameState();
-  io.emit('gameUpdate', gameState);
+  commitGameState(() => {
+    if (side === 'left') {
+      gameState.leftScore = Math.max(0, gameState.leftScore + delta);
+    } else {
+      gameState.rightScore = Math.max(0, gameState.rightScore + delta);
+    }
+  });
   res.json({ side, score: side === 'left' ? gameState.leftScore : gameState.rightScore });
 });
 
@@ -478,21 +945,21 @@ app.post('/api/next-game', (req, res) => {
 
 // HTTP API for swap sides (used by keyboard controller)
 app.post('/api/swap-sides', (req, res) => {
-  const tempTeam = gameState.leftTeam;
-  const tempScore = gameState.leftScore;
-  const tempColor = gameState.leftColor;
-  const tempScoreText = gameState.leftScoreTextColor;
-  gameState.leftTeam = gameState.rightTeam;
-  gameState.leftScore = gameState.rightScore;
-  gameState.leftColor = gameState.rightColor;
-  gameState.leftScoreTextColor = gameState.rightScoreTextColor;
-  gameState.rightTeam = tempTeam;
-  gameState.rightScore = tempScore;
-  gameState.rightColor = tempColor;
-  gameState.rightScoreTextColor = tempScoreText;
-  gameState.sidesSwapped = !gameState.sidesSwapped;
-  saveGameState();
-  io.emit('gameUpdate', gameState);
+  commitGameState(() => {
+    const tempTeam = gameState.leftTeam;
+    const tempScore = gameState.leftScore;
+    const tempColor = gameState.leftColor;
+    const tempScoreText = gameState.leftScoreTextColor;
+    gameState.leftTeam = gameState.rightTeam;
+    gameState.leftScore = gameState.rightScore;
+    gameState.leftColor = gameState.rightColor;
+    gameState.leftScoreTextColor = gameState.rightScoreTextColor;
+    gameState.rightTeam = tempTeam;
+    gameState.rightScore = tempScore;
+    gameState.rightColor = tempColor;
+    gameState.rightScoreTextColor = tempScoreText;
+    gameState.sidesSwapped = !gameState.sidesSwapped;
+  }, { skipScoreDiff: true });
   res.json({ success: true });
 });
 
@@ -542,26 +1009,27 @@ function loadMatchupByIndex(matchups, idx) {
   if (!m || m.group) return;
   const lstc = m.lstc || defaultGameState.leftScoreTextColor;
   const rstc = m.rstc || defaultGameState.rightScoreTextColor;
-  if (gameState.sidesSwapped) {
-    gameState.leftTeam  = m.right;
-    gameState.rightTeam = m.left;
-    gameState.leftColor  = m.rc;
-    gameState.rightColor = m.lc;
-    gameState.leftScoreTextColor  = rstc;
-    gameState.rightScoreTextColor = lstc;
-  } else {
-    gameState.leftTeam  = m.left;
-    gameState.rightTeam = m.right;
-    gameState.leftColor  = m.lc;
-    gameState.rightColor = m.rc;
-    gameState.leftScoreTextColor  = lstc;
-    gameState.rightScoreTextColor = rstc;
-  }
-  gameState.leftScore = 0;
-  gameState.rightScore = 0;
-  gameState.loadedMatchupIndex = idx;
-  saveGameState();
-  io.emit('gameUpdate', gameState);
+  commitGameState(() => {
+    if (gameState.sidesSwapped) {
+      gameState.leftTeam  = m.right;
+      gameState.rightTeam = m.left;
+      gameState.leftColor  = m.rc;
+      gameState.rightColor = m.lc;
+      gameState.leftScoreTextColor  = rstc;
+      gameState.rightScoreTextColor = lstc;
+    } else {
+      gameState.leftTeam  = m.left;
+      gameState.rightTeam = m.right;
+      gameState.leftColor  = m.lc;
+      gameState.rightColor = m.rc;
+      gameState.leftScoreTextColor  = lstc;
+      gameState.rightScoreTextColor = rstc;
+    }
+    gameState.leftScore = 0;
+    gameState.rightScore = 0;
+    gameState.loadedMatchupIndex = idx;
+    pushFeedEntry('game_start', { leftTeam: gameState.leftTeam, rightTeam: gameState.rightTeam });
+  }, { skipScoreDiff: true });
 }
 
 // Next/Prev Game always walks bracket.json — whether its matchups were
@@ -630,38 +1098,38 @@ io.on('connection', (socket) => {
   });
   
   socket.on('updateScore', (data) => {
-    if (data.side === 'left') {
-      gameState.leftScore = Math.max(0, gameState.leftScore + data.change);
-    } else if (data.side === 'right') {
-      gameState.rightScore = Math.max(0, gameState.rightScore + data.change);
-    }
-    saveGameState();
-    io.emit('gameUpdate', gameState);
+    commitGameState(() => {
+      if (data.side === 'left') {
+        gameState.leftScore = Math.max(0, gameState.leftScore + data.change);
+      } else if (data.side === 'right') {
+        gameState.rightScore = Math.max(0, gameState.rightScore + data.change);
+      }
+    });
   });
-  
+
   socket.on('swapSides', () => {
-    const tempTeam = gameState.leftTeam;
-    const tempScore = gameState.leftScore;
-    const tempColor = gameState.leftColor;
-    const tempScoreText = gameState.leftScoreTextColor;
-    gameState.leftTeam = gameState.rightTeam;
-    gameState.leftScore = gameState.rightScore;
-    gameState.leftColor = gameState.rightColor;
-    gameState.leftScoreTextColor = gameState.rightScoreTextColor;
-    gameState.rightTeam = tempTeam;
-    gameState.rightScore = tempScore;
-    gameState.rightColor = tempColor;
-    gameState.rightScoreTextColor = tempScoreText;
-    gameState.sidesSwapped = !gameState.sidesSwapped;
-    saveGameState();
-    io.emit('gameUpdate', gameState);
+    commitGameState(() => {
+      const tempTeam = gameState.leftTeam;
+      const tempScore = gameState.leftScore;
+      const tempColor = gameState.leftColor;
+      const tempScoreText = gameState.leftScoreTextColor;
+      gameState.leftTeam = gameState.rightTeam;
+      gameState.leftScore = gameState.rightScore;
+      gameState.leftColor = gameState.rightColor;
+      gameState.leftScoreTextColor = gameState.rightScoreTextColor;
+      gameState.rightTeam = tempTeam;
+      gameState.rightScore = tempScore;
+      gameState.rightColor = tempColor;
+      gameState.rightScoreTextColor = tempScoreText;
+      gameState.sidesSwapped = !gameState.sidesSwapped;
+    }, { skipScoreDiff: true });
   });
-  
+
   socket.on('resetGame', () => {
-    gameState.leftScore = 0;
-    gameState.rightScore = 0;
-    saveGameState();
-    io.emit('gameUpdate', gameState);
+    commitGameState(() => {
+      gameState.leftScore = 0;
+      gameState.rightScore = 0;
+    }, { skipScoreDiff: true });
   });
 
   socket.on('navigateMatchup', (data) => {
@@ -669,15 +1137,26 @@ io.on('connection', (socket) => {
   });
 
   socket.on('loadMatchup', (data) => {
-    gameState.leftTeam  = data.leftTeam;
-    gameState.rightTeam = data.rightTeam;
-    gameState.leftColor  = data.leftColor;
-    gameState.rightColor = data.rightColor;
-    gameState.leftScore  = 0;
-    gameState.rightScore = 0;
-    gameState.loadedMatchupIndex = data.matchupIndex ?? null;
-    saveGameState();
-    io.emit('gameUpdate', gameState);
+    commitGameState(() => {
+      gameState.leftTeam  = data.leftTeam;
+      gameState.rightTeam = data.rightTeam;
+      gameState.leftColor  = data.leftColor;
+      gameState.rightColor = data.rightColor;
+      gameState.leftScore  = 0;
+      gameState.rightScore = 0;
+      gameState.loadedMatchupIndex = data.matchupIndex ?? null;
+      pushFeedEntry('game_start', { leftTeam: gameState.leftTeam, rightTeam: gameState.rightTeam });
+    }, { skipScoreDiff: true });
+  });
+
+  // Instant cut, by design: setting activePresetId goes through the same
+  // commitGameState -> saveGameState -> io.emit('gameUpdate') pipeline as
+  // everything else, so display.html's next full-state render just swaps
+  // its whole layout. No separate transition/animation mechanism.
+  socket.on('setActivePreset', (data) => {
+    commitGameState(() => {
+      gameState.activePresetId = data.presetId || null;
+    });
   });
 
   socket.on('startCommercialBreak', async (data) => {

@@ -14,3 +14,5 @@ podium-config.json
 podium_sync/state/
 shufflepolo-config.json
 shufflepolo_sync/state/
+presets/
+public/logos/

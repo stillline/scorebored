@@ -9,38 +9,22 @@
    LUMA KEY CONTRACT
    #000000 is the only transparent value and is used for the
    stage background only. Every visible pixel sits at or above
-   --floor. The badge "black" is --floor, not black.
+   --floor.
    ============================================================ */
 :root{
   --floor:#1A1E24;
   --shell-2:#2A3038;
-  --crest:#666C74;
-  --cell-hi:#7B828A;
-  --cell-lo:#666D75;
-  --bar-hi:#E6E8EB;
-  --bar-lo:#CBCFD4;
-  --bar-edge:#A7ADB5;
   --white:#FFFFFF;
+  --dim:#B9C0C8;
   --face:"Helvetica Neue",Helvetica,Arial,"SF Pro Display",system-ui,sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:#000;overflow:hidden}
 body{font-family:var(--face)}
-#stage{position:fixed;inset:0;background:#000;overflow:hidden}
-
-/* the scorebug renders at native 1854x576 art size, then scaled to 65% and
-   docked to the bottom center of the screen */
-#bugwrap{position:absolute;left:50%;bottom:24px;width:1854px;margin-left:-927px;
-  transform:scale(0.325);transform-origin:bottom center}
-svg{display:block;width:100%;height:auto}
-
-.name{font-family:var(--face);font-weight:700;fill:var(--floor)}
-.score{font-family:var(--face);font-weight:700;fill:var(--white);font-size:108px;text-anchor:middle}
-.clock{font-family:var(--face);font-weight:700;font-size:78px;text-anchor:middle;
-  fill:var(--white);stroke:var(--floor);stroke-width:9px;paint-order:stroke fill;
-  stroke-linejoin:round}
-.clock.stopped{fill:#B9C0C8}
-.chiptext{font-family:var(--face);font-weight:700;font-size:30px;fill:var(--white)}
+/* #stage is a fixed 1920x1080 canvas, scaled to fill the viewport - same
+   coordinate space the editor uses, so a preset's x/y/w/h apply unchanged. */
+#stage{position:fixed;left:0;top:0;width:1920px;height:1080px;
+  background:#000;overflow:hidden;transform-origin:top left}
 
 /* Commercial Break Video Overlay */
 .commercial-overlay {
@@ -78,64 +62,22 @@ svg{display:block;width:100%;height:auto}
 .commercial-video::-webkit-media-controls-fullscreen-button {
     display: none !important;
 }
+
+/* Debug overlay - diagnostic only, remove once the editor's reliability
+   is confirmed. Deliberately NOT part of any preset/luma-key contract;
+   sits above everything, plain readable text, not meant to look good. */
+#debugOverlay{position:fixed;right:8px;bottom:8px;z-index:9999;
+  background:rgba(0,0,0,0.75);color:#0f0;font:12px/1.4 monospace;
+  padding:8px 10px;border-radius:4px;white-space:pre;pointer-events:none}
+#debugOverlay.stale{color:#ff0}
+#debugOverlay.disconnected{color:#f00}
 </style>
 </head>
 <body>
 
-<div id="stage">
-  <div id="bugwrap">
-    <svg id="bug" viewBox="0 0 1854 576" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="gBar" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="var(--bar-hi)"/><stop offset="1" stop-color="var(--bar-lo)"/>
-        </linearGradient>
-        <linearGradient id="gCell" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="var(--cell-hi)"/><stop offset="1" stop-color="var(--cell-lo)"/>
-        </linearGradient>
-      </defs>
-
-      <!-- name bar -->
-      <rect x="35" y="280" width="1784" height="112" fill="url(#gBar)" stroke="var(--bar-edge)" stroke-width="4"/>
-      <text id="nameA" class="name" x="110" y="352" text-anchor="start">Team 1</text>
-      <text id="nameB" class="name" x="1744" y="352" text-anchor="end">Team 2</text>
-      <g id="penA"></g>
-      <g id="penB"></g>
-
-      <!-- badge shell: shoulders + plinth, same fill so the union reads solid.
-           Top corners chamfer at 45 deg (matching the score cells' own
-           diagonal cut into the crest) so the shell reads as a shield, not
-           a plain rectangle. -->
-      <path d="M672 257 L717 212 H1137 L1182 257 V438 H672 Z" fill="var(--floor)"/>
-      <path d="M737 430 H1117 V500 L927 545 L737 500 Z" fill="var(--floor)"/>
-
-      <!-- score cells -->
-      <path d="M745 285 L790 240 H920 V415 H745 Z" fill="url(#gCell)"/>
-      <path d="M1109 285 L1064 240 H934 V415 H1109 Z" fill="url(#gCell)"/>
-      <text id="scoreA" class="score" x="833" y="372">0</text>
-      <text id="scoreB" class="score" x="1021" y="372">0</text>
-
-      <!-- crest -->
-      <path d="M827 136 H1027 L1085 200 V265 L927 352 L769 265 V200 Z" fill="var(--floor)"/>
-      <path d="M845 158 H1009 L1063 214 V258 L927 326 L791 258 V214 Z" fill="var(--crest)"/>
-      <g fill="var(--white)">
-        <g transform="rotate(157 927 213)">
-          <rect x="832" y="207" width="190" height="12" rx="6"/>
-          <rect x="1015" y="189" width="18" height="48" rx="6"/>
-        </g>
-        <g transform="rotate(23 927 213)">
-          <rect x="832" y="207" width="190" height="12" rx="6"/>
-          <rect x="1015" y="189" width="18" height="48" rx="6"/>
-        </g>
-        <circle cx="927" cy="282" r="18"/>
-      </g>
-
-      <!-- timeout pips -->
-      <g id="pips"></g>
-
-      <text id="clock" class="clock" x="927" y="112">12:00</text>
-    </svg>
-  </div>
-</div>
+<!-- Elements are rendered into #stage dynamically from the active preset -
+     see renderDisplay()/renderPreset() below. No static layout here. -->
+<div id="stage"></div>
 
 <!-- Commercial Break Video Overlay -->
 <div class="commercial-overlay" id="commercialOverlay">
@@ -144,138 +86,148 @@ svg{display:block;width:100%;height:auto}
     </video>
 </div>
 
+<div id="debugOverlay"></div>
+
 <script src="/socket.io/socket.io.js"></script>
+<script src="/scorebug-render.js"></script>
 <script>
 "use strict";
-const NS = "http://www.w3.org/2000/svg";
 const socket = io();
+const stageEl = document.getElementById("stage");
 
-/* ---- layout constants (from the scorebug reference; positional only) ---- */
-const L = {
-  barL: 35, barR: 1819, pad: 75,
-  badgeL: 672, badgeR: 1182,
-  nameMax: 80, nameMin: 43,
-  penGap: 24, chipH: 52, chipPadX: 16, chipGap: 10,
-  pip: { w: 34, h: 34, y: 448, xA: [800, 840], xB: [980, 1020] }
+// ---- debug overlay (diagnostic only, see CSS comment) ----
+const debugEl = document.getElementById("debugOverlay");
+const debugState = { lastUpdateAt: null, renderCount: 0, activePresetId: undefined, renderedVersion: undefined };
+
+function renderDebugOverlay(){
+  const connected = socket.connected;
+  const secondsSinceUpdate = debugState.lastUpdateAt ? ((Date.now() - debugState.lastUpdateAt) / 1000).toFixed(1) : "never";
+  debugEl.textContent =
+    "socket: " + (connected ? "connected" : "DISCONNECTED") + "\n" +
+    "last gameUpdate: " + secondsSinceUpdate + "s ago\n" +
+    "renders: " + debugState.renderCount + "\n" +
+    "activePresetId: " + debugState.activePresetId + "\n" +
+    "rendered version: " + debugState.renderedVersion;
+  debugEl.classList.toggle("disconnected", !connected);
+  debugEl.classList.toggle("stale", connected && debugState.lastUpdateAt && (Date.now() - debugState.lastUpdateAt) > 10000);
+}
+setInterval(renderDebugOverlay, 500);
+socket.on("connect", renderDebugOverlay);
+socket.on("disconnect", renderDebugOverlay);
+
+// Scale the 1920x1080 stage to fill whatever viewport this actually runs
+// in (the kiosk launches at exactly 1920x1080, so normally scale=1, but
+// this keeps the page correct if that ever changes or it's previewed in a
+// differently-sized window).
+function fitStage(){
+  const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+  stageEl.style.transform = "scale(" + scale + ")";
+}
+window.addEventListener("resize", fitStage);
+fitStage();
+
+// A socket reconnect alone doesn't mean the server process restarted (a
+// brief network blip reconnects the same process fine) - only reload the
+// page when gameState._serverInstanceId actually changes, which happens
+// exactly once per real server restart. This is how the kiosk picks up a
+// code deploy (new display.html / scorebug-render.js) without needing a
+// manual Chromium restart - and reloading in-place, rather than killing
+// the window, avoids ever exposing the bare desktop (the page's own CSS
+// background is solid black before any content paints, so there's no
+// white flash either).
+let knownServerInstanceId = null;
+
+function reloadIfServerRestarted(gameState){
+  const id = gameState._serverInstanceId;
+  if(!id) return false;
+  if(knownServerInstanceId === null){
+    knownServerInstanceId = id;
+    return false;
+  }
+  if(id !== knownServerInstanceId){
+    console.log("Server restarted (new instance id) - reloading to pick up any code changes");
+    window.location.reload();
+    return true;
+  }
+  return false;
+}
+
+// The active preset drives everything drawn on #stage. Fetched (and
+// cached) whenever gameState.activePresetId changes; re-rendered in full
+// on every gameUpdate push (score/clock/feed/etc. all live inside the
+// preset's elements, so a full rebuild is what "instant cut" means here -
+// see setActivePreset in server.js). No preset set (or a preset that
+// fails to load) falls back to a minimal built-in layout so the kiosk
+// never shows a blank stage.
+let loadedPreset = null;
+let latestGameState = null;
+
+const FALLBACK_PRESET = {
+  id: null,
+  elements: [
+    { id: "_fb_nameA", type: "dataText", role: "teamName", side: "left", x: 60, y: 940, w: 360, h: 60, z: 1,
+      text: { fontSizePx: 32, fontWeight: 700, color: "#FFFFFF", align: "left" } },
+    { id: "_fb_scoreA", type: "dataText", role: "score", side: "left", x: 440, y: 920, w: 100, h: 90, z: 1,
+      text: { fontSizePx: 56, fontWeight: 700, color: "#FFFFFF", align: "center" } },
+    { id: "_fb_clock", type: "dataText", role: "clock", side: null, x: 860, y: 930, w: 200, h: 70, z: 1,
+      text: { fontSizePx: 44, fontWeight: 700, color: "#FFFFFF", align: "center" } },
+    { id: "_fb_scoreB", type: "dataText", role: "score", side: "right", x: 1380, y: 920, w: 100, h: 90, z: 1,
+      text: { fontSizePx: 56, fontWeight: 700, color: "#FFFFFF", align: "center" } },
+    { id: "_fb_nameB", type: "dataText", role: "teamName", side: "right", x: 1500, y: 940, w: 360, h: 60, z: 1,
+      text: { fontSizePx: 32, fontWeight: 700, color: "#FFFFFF", align: "right" } },
+    { id: "_fb_feed", type: "dataText", role: "feed", side: null, x: 24, y: 24, w: 420, h: 260, z: 1,
+      text: { fontSizePx: 20, fontWeight: 700, color: "#FFFFFF", align: "left" } },
+  ],
 };
 
-const el = id => document.getElementById(id);
-const D = { clock: el("clock"), nameA: el("nameA"), nameB: el("nameB"),
-            scoreA: el("scoreA"), scoreB: el("scoreB"),
-            penA: el("penA"), penB: el("penB"), pips: el("pips") };
-const memo = { name:[null,null], score:[null,null], pen:[null,null], to:[null,null] };
-
-/* Shrink to fit, then compress letterspacing as a last resort, so a long
-   team name can never run under the badge. */
-function fitName(node, text, maxWidth){
-  node.removeAttribute("textLength");
-  node.setAttribute("font-size", L.nameMax);
-  node.textContent = text;
-  let size = L.nameMax;
-  while(node.getComputedTextLength() > maxWidth && size > L.nameMin){
-    size -= 1;
-    node.setAttribute("font-size", size);
-  }
-  if(node.getComputedTextLength() > maxWidth){
-    node.setAttribute("textLength", maxWidth);
-    node.setAttribute("lengthAdjust", "spacingAndGlyphs");
+// Always fetches fresh rather than caching by preset id - a preset's
+// ACTIVE VERSION can change (editing + "use this version", or rolling
+// back to an older one) without gameState.activePresetId itself ever
+// changing, so an id-only cache would miss exactly that update. This is
+// one small GET against a local JSON file per gameUpdate, not worth
+// trading correctness for.
+async function loadActivePreset(presetId){
+  if(!presetId) return { ...FALLBACK_PRESET, _debugVersion: "fallback" };
+  try {
+    const res = await fetch("/api/presets/" + presetId);
+    if(!res.ok) throw new Error("preset fetch failed: " + res.status);
+    const preset = await res.json();
+    const version = (preset.versions || []).find(v => v.version === preset.activeVersion);
+    if(!version) throw new Error("preset has no active version");
+    return { id: preset.id, canvas: version.canvas, elements: version.elements, _debugVersion: version.version };
+  } catch (e) {
+    console.error("Falling back to built-in layout - could not load preset", presetId, e);
+    return { ...FALLBACK_PRESET, _debugVersion: "fallback (fetch failed)" };
   }
 }
 
-/* penalties: [{player, severity, remaining_seconds, frozen}, ...] per side */
-function fmtPenTime(p){
-  if(p.frozen) return "--";
-  const t = Math.max(0, Math.ceil(p.remaining_seconds));
-  return Math.floor(t/60) + ":" + String(t%60).padStart(2,"0");
-}
+setInterval(() => {
+  if(!loadedPreset || !latestGameState) return;
+  latestGameState._currentClock = latestGameState.clock
+    ? { ...latestGameState.clock, localAnchorAt: latestGameState._clockAnchorAt }
+    : null;
+  tickClockElements(latestGameState, stageEl);
+}, 250);
 
-function buildPens(i, penalties){
-  const g = i ? D.penB : D.penA;
-  const live = (penalties || []).slice(-2);
-  while(g.firstChild) g.removeChild(g.firstChild);
-  if(!live.length) return 0;
+// Socket.IO doesn't await an async handler, so back-to-back gameUpdate
+// pushes (e.g. a quick Save followed by Set Active) can have overlapping
+// renderDisplay calls in flight at once - each does its own preset fetch,
+// and without this guard whichever fetch happened to resolve LAST would
+// win and get painted, even if it was triggered by an older, since-
+// superseded gameUpdate. That stale-wins race is exactly the kind of bug
+// that looks like "it just stopped updating" rather than an obvious
+// crash. renderGeneration makes only the most-recently-STARTED render
+// allowed to actually touch the DOM.
+let renderGeneration = 0;
 
-  // build right-to-left for side A (chips hug the badge), left-to-right for B
-  let cursor = i ? L.badgeR + L.penGap : L.badgeL - L.penGap;
-  live.forEach((p, idx) => {
-    const who = p.player || p.severity || "PEN";
-    const label = who + "  " + fmtPenTime(p);
-    const t = document.createElementNS(NS, "text");
-    t.setAttribute("class", "chiptext");
-    t.setAttribute("y", 336 + 11);
-    t.textContent = label;
-    g.appendChild(t);
-    const w = t.getComputedTextLength() + L.chipPadX * 2;
-    const x = i ? cursor : cursor - w;
-
-    const r = document.createElementNS(NS, "rect");
-    r.setAttribute("x", x); r.setAttribute("y", 336 - L.chipH/2);
-    r.setAttribute("width", w); r.setAttribute("height", L.chipH);
-    r.setAttribute("rx", 8); r.setAttribute("fill", "var(--floor)");
-    g.insertBefore(r, t);
-    t.setAttribute("x", x + L.chipPadX);
-
-    cursor = i ? x + w + L.chipGap : x - L.chipGap;
-  });
-  return Math.abs(cursor - (i ? L.badgeR + L.penGap : L.badgeL - L.penGap));
-}
-
-function renderPips(leftTO, rightTO){
-  const g = D.pips;
-  const key = (leftTO ?? 0) + "/" + (rightTO ?? 0);
-  if(g.dataset.k === key) return;
-  g.dataset.k = key;
-  while(g.firstChild) g.removeChild(g.firstChild);
-  [leftTO ?? 0, rightTO ?? 0].forEach((to, i) => {
-    const xs = i ? L.pip.xB : L.pip.xA;
-    for(let n = 0; n < 2; n++){
-      const r = document.createElementNS(NS, "rect");
-      r.setAttribute("x", xs[n]); r.setAttribute("y", L.pip.y);
-      r.setAttribute("width", L.pip.w); r.setAttribute("height", L.pip.h);
-      r.setAttribute("rx", 3);
-      r.setAttribute("fill", n < to ? "var(--bar-hi)" : "var(--shell-2)");
-      g.appendChild(r);
-    }
-  });
-}
-
-// Podium only pushes the clock on discrete events (goal, penalty,
-// start/stop), not every second — podium_sync.py also re-pushes on a
-// 100ms ticker whenever the clock is running so a page reload is never
-// far stale, but interpolate locally too as a smoothing/resilience layer
-// in case a push is delayed or dropped. Anchored to THIS device's own
-// Date.now() at receipt (not a timestamp from the Pi) so cross-device
-// clock skew can't show up as drift.
-let currentClock = null;
-
-function renderClockNow(){
-  const clock = currentClock;
-  if(!clock){
-    D.clock.textContent = "";
-    return;
-  }
-
-  let secs = clock.remaining_seconds;
-  if(clock.running){
-    const elapsedSeconds = (Date.now() - clock.localAnchorAt) / 1000;
-    if(clock.phase === "overtime"){
-      secs = Math.floor(clock.remaining_seconds + elapsedSeconds);
-    } else {
-      secs = Math.max(Math.ceil(clock.remaining_seconds - elapsedSeconds), 0);
-    }
-  }
-
-  const mm = Math.floor(secs / 60);
-  const ss = String(secs % 60).padStart(2, "0");
-  const formatted = mm + ":" + ss;
-  D.clock.textContent = clock.phase === "overtime" ? "+" + formatted : formatted;
-  D.clock.classList.toggle("stopped", !clock.running);
-}
-
-setInterval(renderClockNow, 250);
-
-function renderDisplay(gameState){
+async function renderDisplay(gameState){
   console.log('Updating display with gameState:', gameState);
+
+  debugState.lastUpdateAt = Date.now();
+  debugState.activePresetId = gameState.activePresetId;
+  renderDebugOverlay();
+
+  if(reloadIfServerRestarted(gameState)) return;
 
   // Handle commercial break state
   if (gameState.commercialBreak) {
@@ -288,40 +240,34 @@ function renderDisplay(gameState){
     }
   }
 
-  currentClock = gameState.clock ? { ...gameState.clock, localAnchorAt: Date.now() } : null;
-  renderClockNow();
+  // Anchor the clock to THIS device's receipt time, not a timestamp from
+  // the Pi - see scorebug-render.js's clock-interpolation comment. This
+  // MUST happen before the preset fetch below, not after: clock.
+  // remaining_seconds is a snapshot as of the moment this gameUpdate was
+  // sent, and interpolation assumes localAnchorAt marks "now, when that
+  // snapshot was true". Anchoring after an awaited fetch (switching to a
+  // preset not already cached, a slow network, a server busy with a sync
+  // push) silently adds the fetch's own latency as extra elapsed time, so
+  // the displayed clock visibly jumps ahead of Shufflepolo's real one by
+  // however long that fetch happened to take - worse the more it varies
+  // run to run, which looks exactly like "drifts out of sync on reload".
+  gameState._clockAnchorAt = Date.now();
+  gameState._currentClock = gameState.clock ? { ...gameState.clock, localAnchorAt: gameState._clockAnchorAt } : null;
 
-  const penalties = gameState.penalties || {};
-  const timeouts = gameState.timeouts || {};
+  const myGeneration = ++renderGeneration;
+  const preset = await loadActivePreset(gameState.activePresetId);
+  if(myGeneration !== renderGeneration){
+    console.log("Discarding stale render (a newer gameUpdate arrived while this preset fetch was in flight)");
+    return;
+  }
+  loadedPreset = preset;
+  latestGameState = gameState;
 
-  [0, 1].forEach(i => {
-    const name = i ? gameState.rightTeam : gameState.leftTeam;
-    const score = i ? gameState.rightScore : gameState.leftScore;
-    const sidePenalties = i ? penalties.right : penalties.left;
-    const penKey = (sidePenalties || []).map(p => (p.player||'') + p.remaining_seconds).join(",");
+  renderPreset(preset, gameState, stageEl);
 
-    let penWidth = null;
-    if(memo.pen[i] !== penKey){
-      penWidth = buildPens(i, sidePenalties);
-      memo.pen[i] = penKey;
-      memo.name[i] = null; // name width budget changed, refit
-    }
-
-    if(memo.name[i] !== name){
-      const used = penWidth === null ? 0 : penWidth;
-      const inner = (i ? L.badgeR + L.penGap + used : L.badgeL - L.penGap - used);
-      const max = i ? (L.barR - L.pad) - (inner + L.penGap)
-                    : (inner - L.penGap) - (L.barL + L.pad);
-      fitName(i ? D.nameB : D.nameA, name || '', Math.max(160, max));
-      memo.name[i] = name;
-    }
-    if(memo.score[i] !== score){
-      (i ? D.scoreB : D.scoreA).textContent = score ?? 0;
-      memo.score[i] = score;
-    }
-  });
-
-  renderPips(timeouts.left, timeouts.right);
+  debugState.renderCount++;
+  debugState.renderedVersion = preset._debugVersion;
+  renderDebugOverlay();
 }
 
 /* ---- commercial break (unchanged from prior display.html) ---- */

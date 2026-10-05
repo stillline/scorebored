@@ -117,6 +117,32 @@ function pushJson(url, payload) {
 
 // ---------------------------------------------------------- shape -> app state
 
+// bestClockOffsetMs holds this process's most accurate clock-sync reading
+// (Shufflepolo server time minus our own), kept across reads rather than
+// recomputed fresh each time - per the round-trip-timing analysis a
+// Shufflepolo dev gave us: offset should be measured as
+// server_now - (t0+t1)/2 (t0/t1 bracketing the HTTP request), and once
+// measured, a reading from a SLOWER round trip should never replace one
+// from a faster round trip, since the slower one carries more timing
+// uncertainty, not fresher information. Plain Date.now() throughout, not
+// monotonic time, because this value is only ever used to interpret an
+// ISO wall-clock timestamp (running_since) the same way the server
+// computed it - it's a wall-clock-to-wall-clock offset, not a duration.
+let bestClockOffsetMs = null;
+let bestClockOffsetRoundTripMs = Infinity;
+
+function updateClockOffset(serverNowIso, t0, t1) {
+  const serverNowMs = Date.parse(serverNowIso);
+  if (isNaN(serverNowMs)) return;
+  const roundTripMs = t1 - t0;
+  const midpointMs = (t0 + t1) / 2;
+  const offsetMs = serverNowMs - midpointMs;
+  if (bestClockOffsetMs === null || roundTripMs < bestClockOffsetRoundTripMs) {
+    bestClockOffsetMs = offsetMs;
+    bestClockOffsetRoundTripMs = roundTripMs;
+  }
+}
+
 function buildLiveSnapshot(snapshot) {
   const live = snapshot.live && snapshot.live[0];
   if (!live) {
@@ -125,10 +151,28 @@ function buildLiveSnapshot(snapshot) {
   return {
     connected: true,
     has_game: true,
-    server_now: snapshot.server_now,
+    // The measured offset (Shufflepolo server time minus ours), not raw
+    // server_now - a consumer several hops downstream (this process's own
+    // POST to the Node server, then that server's own socket broadcast)
+    // would otherwise be computing "now minus server_now" against a
+    // server_now that's already stale by however long those extra hops
+    // took, silently re-introducing the exact per-hop timing error this
+    // was meant to eliminate. offset_ms is measured ONCE, right here,
+    // close to the actual HTTP round trip, and carried through as a
+    // precomputed number the rest of the pipeline only ever adds.
+    clock_offset_ms: bestClockOffsetMs,
     team1: { name: live.team1.name, score: live.team1.score },
     team2: { name: live.team2.name, score: live.team2.score },
     clock: live.clock,
+    // Raw per-event lists (cumulative for the game, keyed by `id`) - passed
+    // through as-is so server.js can diff them against the previous push
+    // and derive kill-feed entries (goal scorer, penalty severity/player).
+    // team_id tags each event; server.js maps that to home/away itself.
+    team1_id: live.team1.team_id,
+    team2_id: live.team2.team_id,
+    goals: live.goals || [],
+    penalties: live.penalties || [],
+    timeouts: live.timeouts || [],
   };
 }
 
@@ -217,14 +261,17 @@ async function read() {
   reading = true;
   lastReadAt = Date.now();
   try {
+    const t0 = Date.now();
     const response = await fetch(snapshotUrl);
     const body = await response.json();
+    const t1 = Date.now();
     if (!response.ok) {
       // 404 while connected means the tournament was unpublished; keep the
       // last good state on screen and keep listening.
       log(`snapshot ${response.status} ${body.error || ''}`);
       writeStatusError(`HTTP ${response.status}: ${body.error || 'unknown'}`);
     } else {
+      updateClockOffset(body.server_now, t0, t1);
       writeParticipants(body);
       writeBracketState(body);
       await pushJson(PUSH_URL, buildLiveSnapshot(body));
