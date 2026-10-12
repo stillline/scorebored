@@ -22,6 +22,7 @@ cups.socket
 dpkg-db-backup.timer
 e2scrub_all.timer
 e2scrub_reap.service
+etckeeper.timer
 fstrim.timer
 getty@.service
 glamor-test.service

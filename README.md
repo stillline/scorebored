@@ -11,8 +11,8 @@ Socket.IO across every connected page.
 ```bash
 sudo apt update && sudo apt upgrade -y
 
-# Install Node.js 18+
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+# Install Node.js 22 (the rig runs 22.x from NodeSource)
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
 git clone https://github.com/stillline/scorebored.git
@@ -31,7 +31,7 @@ display), see [docs/kiosk-display.md](docs/kiosk-display.md).
 | `/control` | Main operator control panel |
 | `/display` | Clean scoreboard output (fullscreen/overlay) |
 | `/bracket` | Tournament schedule manager + score-sync provider config |
-| `/editor` | Scorebug visual design editor |
+| `/overlay-editor` | Scorebug authoring: paste HTML/CSS, place logos, version & go live |
 | `/teams` | Read-only roster viewer for the active sync provider |
 | `/bracket-viewer/:provider` | Per-provider bracket/standings viewer |
 | `/network` | Network dashboard (Wi-Fi AP, Speedify, RTMP, iPhone pairing) |
@@ -51,7 +51,11 @@ display), see [docs/kiosk-display.md](docs/kiosk-display.md).
 - **[Network dashboard](docs/network.md)** — Wi-Fi AP, Speedify bonding,
   RTMP relay, iPhone tether pairing
 - **[Kiosk display & systemd service](docs/kiosk-display.md)** — Pi
-  autostart, fullscreen Chromium kiosk, server-as-a-service
+  autostart, fullscreen Chromium kiosk, server-as-a-service, crash capture
+- **[System configuration in git](docs/system-config.md)** — how the Pi's
+  own config (not just this code) is tracked: `provision/` + etckeeper
+- **[Embedded migration plan](docs/embedded-migration-plan.md)** — the
+  plan for rebuilding the rig as an appliance on a second SD card
 
 ---
 
@@ -132,7 +136,9 @@ Clean scoreboard output — fullscreen this on the display machine.
 |------|---------|
 | `gamestate.json` | Live scoreboard state (scores, colors, ATEM status, active matchup index) |
 | `bracket.json` | Tournament schedule with all matchups, colors, and final scores |
-| `presets/` | Scorebug designs (see [docs/scorebug-editor.md](docs/scorebug-editor.md)) |
+| `overlays/` | Scorebug designs with versions and placed logos (see [docs/scorebug-editor.md](docs/scorebug-editor.md)); only the shipped default is tracked |
+| `presets/` | Older scorebug presets |
+| `public/logos/` | Uploaded team logos |
 | `*-config.json` (challonge/podium/shufflepolo) | Score-sync provider config (see [docs/sync.md](docs/sync.md)) |
 
 All of the above are gitignored and auto-created at runtime. Do not edit
@@ -153,7 +159,9 @@ scorebored/
 ├── podium_sync/             # Podium sync provider subprocess (vendors libpodium)
 ├── shufflepolo_sync/        # Shufflepolo sync provider subprocess
 ├── public/                  # All pages (control, display, bracket, editor, ...)
-├── presets/                 # Scorebug designs (gitignored, runtime)
+├── overlays/                # Scorebug designs (operator data; only the default is tracked)
+├── presets/                 # Older scorebug presets (gitignored, runtime)
+├── provision/               # Snapshot of the Pi's system config + sync script (docs/system-config.md)
 └── docs/                    # Per-feature documentation
 ```
 
