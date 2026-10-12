@@ -35,8 +35,8 @@ To put a file back, copy it from `provision/system/` to its real path
 daemon-reload`, or a reboot as appropriate.
 
 Secrets are excluded by construction: Wi-Fi client profiles,
-`/etc/hostapd/hostapd.conf` (AP passphrase) and `/etc/nginx/nginx.conf`
-(YouTube stream key) are never copied. This repo is public; keep it that
+`/etc/hostapd/hostapd.conf` (AP passphrase) and `/etc/nginx/rtmp-push.conf`
+(YouTube stream key, root-only) are never copied. This repo is public; keep it that
 way.
 
 ## 2. etckeeper: all of `/etc`, automatically

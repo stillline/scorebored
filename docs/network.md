@@ -37,15 +37,34 @@ if the subprocess exits or errors.
 
 ## RTMP destination editor (`lib/rtmp.js`)
 
-Lets the operator repoint the stream relay at a different ingest URL
-without SSHing into the Pi, by reading/writing the `STREAM_URL` inside an
-external streaming script (`/usr/local/bin/pi-send-buffer.sh` — **not part
-of this repo**, lives on the Pi itself). Saved base-URL + key presets are
-client-side only (`network.html`'s `localStorage`) — nothing server-side to
-manage there.
+The live relay is nginx-rtmp: the ATEM publishes to `rtmp://10.42.0.1/live`
+and nginx pushes that stream to one fixed destination. The destination line
+lives in `/etc/nginx/rtmp-push.conf` (root-only, mode 600, included from
+the `application live` block in `nginx.conf`) so the YouTube stream key is
+not in a world-readable file.
 
-See the memory notes on the nginx RTMP relay layout for how this fits into
-the broader streaming pipeline (not covered in this repo).
+The network page reads and changes that line. Saving a new destination
+writes the file, runs `nginx -t` (rolling back if nginx rejects it) and
+**restarts** nginx, because a reload only applies to new sessions and the
+point is to switch the session that is on air. The ATEM reconnects by
+itself a few seconds later; expect a short gap on the stream. Presets
+(saved base URL + key combos, e.g. one per channel) are client-side in
+`network.html`'s `localStorage`.
+
+Keep the base URL as `rtmp://a.rtmp.youtube.com/live2`: that host is
+pinned to IPv4 in `/etc/hosts` because the Pi's IPv6 is broken and
+nginx-rtmp does not fall back; another ingest host would need its own pin.
+
+A wrong or stale key produces no error anywhere: nginx pushes happily and
+YouTube shows nothing. Keys are per channel and can be per event, so when
+a channel shows no stream, check the key first. A static program such as
+the scoreboard overlay alone encodes at about 300 kbit/s, which is normal.
+
+Historical note: until 2026-10-12 this editor changed `STREAM_URL` in
+`/usr/local/bin/pi-send-buffer.sh`, a record-and-forward sender that has
+been dormant since April (its service is disabled and nginx has no
+`record` directive). That script still exists but is not used by the
+relay.
 
 ## Uplink topology and bonding
 
