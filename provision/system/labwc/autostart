@@ -14,6 +14,9 @@
 # the surviving watcher respawns the panel a second later. So: wait for each
 # watcher to exist before killing it.
 
+ts() { echo "autostart: $1 at $(date +%T.%3N) (up $(cut -d' ' -f1 /proc/uptime)s)" >&2; }
+ts begin
+
 kill_system_watcher() {
     # $1 = program path as it appears in /etc/xdg/labwc/autostart
     i=0
@@ -29,6 +32,7 @@ kill_system_watcher() {
 
 kill_system_watcher /usr/bin/wf-panel-pi
 kill_system_watcher /usr/bin/pcmanfm-pi
+ts "system watchers killed"
 sleep 0.5
 
 # Now kill the processes themselves (no watcher to restart them).
@@ -40,6 +44,7 @@ pkill -x pcmanfm 2>/dev/null || true
 
 # Scoreboard display launcher — covers the screen with black immediately, then
 # waits for the server and launches Chromium kiosk
+ts "launching launch-display.sh"
 /home/matthew/bin/scorebored/launch-display.sh &
 
 # Diagnostic: report to ~/.xsession-errors if a panel or desktop survived.

@@ -6,6 +6,8 @@
 
 export DISPLAY=:0
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ts() { echo "launch-display: $1 at $(date +%T.%3N) (up $(cut -d' ' -f1 /proc/uptime)s)" >&2; }
+ts begin
 
 # Clear system-injected Chromium flags — /etc/chromium.d/extensions adds
 # --load-extension= (empty, no extensions installed) which breaks kiosk mode.
@@ -32,12 +34,14 @@ python3 "$SCRIPT_DIR/black-cover.py" &
 sleep 0.5
 
 # Wait for scoreboard server on port 3000 (up to 60 seconds)
+ts "cover up, waiting for server"
 for i in $(seq 1 60); do
     if curl -sf http://localhost:3000/ -o /dev/null 2>/dev/null; then
         break
     fi
     sleep 1
 done
+ts "server answered"
 
 # Kill any stale Chromium instance
 pkill -x chromium 2>/dev/null || true
@@ -82,6 +86,7 @@ chromium \
     http://localhost:3000/display &
 
 CHROMIUM_PID=$!
+ts "chromium started (pid $CHROMIUM_PID)"
 
 # Wait for Chromium to paint, then remove the black cover
 sleep 4
@@ -92,5 +97,6 @@ fi
 
 # Restart automatically if Chromium exits
 wait "$CHROMIUM_PID"
+ts "chromium exited (status $?), restarting"
 sleep 2
 exec "$0"
