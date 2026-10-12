@@ -1,0 +1,6 @@
+#!/bin/sh
+# Diagnostic (2026-10-12): stamp the moment lightdm starts the session, then
+# run the normal Xsession with a stamped labwc launcher. Remove together with
+# /etc/lightdm/lightdm.conf.d/50-timed-session.conf when no longer needed.
+echo "session-timed: Xsession start at $(date +%T.%3N) (up $(cut -d' ' -f1 /proc/uptime)s)" >&2
+exec /etc/X11/Xsession /etc/lightdm/labwc-timed

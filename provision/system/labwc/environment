@@ -4,5 +4,3 @@ XKB_DEFAULT_VARIANT=
 XKB_DEFAULT_OPTIONS=
 XCURSOR_SIZE=24
 
-# Diagnostic (2026-10-12): verbose seat/logind handshake logging into ~/.xsession-errors
-SEATD_LOGLEVEL=debug
