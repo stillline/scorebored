@@ -1,0 +1,8 @@
+[Unit]
+Description=Services deferred until the scoreboard kiosk is on screen
+# Started by scoreboard-kiosk-up.path once launch-display.sh reports the
+# overlay up, or by scoreboard-deferred-fallback.timer at 180 s after boot
+# whichever comes first. Keeps Companion's 700 MB runtime and the keypad
+# bridge from competing with labwc, node and Chromium for the SD card
+# during the first minute of a cold boot.
+Wants=companion.service companion-keyboard-controller.service

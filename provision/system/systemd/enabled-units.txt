@@ -11,14 +11,8 @@ cloud-init-hotplugd.socket
 cloud-init-local.service
 cloud-init-main.service
 cloud-init-network.service
-companion-keyboard-controller.service
-companion.service
 console-setup.service
 cron.service
-cups-browsed.service
-cups.path
-cups.service
-cups.socket
 dpkg-db-backup.timer
 e2scrub_all.timer
 e2scrub_reap.service
@@ -30,7 +24,6 @@ hostapd.service
 iperf3.service
 keyboard-setup.service
 lightdm.service
-logind-boot-probe.service
 logrotate.timer
 man-db.timer
 ModemManager.service
@@ -46,6 +39,8 @@ rp1-test.service
 rpcbind.service
 rpcbind.socket
 rpi-eeprom-update.service
+scoreboard-deferred-fallback.timer
+scoreboard-kiosk-up.path
 scorebored.service
 speedify.service
 speedify-sharing.service

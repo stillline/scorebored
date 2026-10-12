@@ -60,9 +60,19 @@ Sequence:
    flags disabling anything that could interrupt a fullscreen unattended
    display (infobars, session-restore prompts, notifications, popup
    blocking, password manager, background throttling).
-6. After a fixed 4 s, removes the black cover.
-7. If Chromium exits for any reason, the script restarts itself (`exec
+6. After a fixed 4 s, kills the black cover (by the PID it started; a pid
+   file was used before and lost a race on slow boots, leaving the cover on
+   top of the overlay).
+7. Touches `$XDG_RUNTIME_DIR/scoreboard-kiosk-up`, which
+   `scoreboard-kiosk-up.path` turns into a start of
+   `scoreboard-deferred.target`: Companion and the keypad bridge. See
+   "Boot ordering" below.
+8. If Chromium exits for any reason, the script restarts itself (`exec
    "$0"`), relaunching Chromium again.
+
+Each stage writes a timestamped `launch-display:` line to
+`~/.xsession-errors`; the autostart writes `autostart:` lines. Together
+they show the kiosk path's timing after any boot.
 
 Known weakness: step 6 is a timer, not a "first frame painted" signal.
 Under heavy boot load Chromium has taken close to a minute to paint, during
@@ -73,6 +83,27 @@ proper fix is in the migration plan.
 `/display` reloads itself when the server's instance id changes, so a code
 deploy (`systemctl restart scorebored`) reaches the kiosk without
 restarting Chromium.
+
+## Boot ordering (why the overlay took two minutes)
+
+Measured 2026-10-12 with labwc's debug log: nothing waits on anything, but
+on a cold boot every disk-heavy step runs ten to twenty times slower than
+normal because labwc, Mesa, Xwayland, the Node server's `node_modules`,
+Chromium, Companion's 700 MB runtime, cloud-init and CUPS all read the SD
+card at once (load average 5). labwc alone took about 60 s to reach its
+autostart, the server 40 s to listen, Chromium 45 s to paint.
+
+Mitigations in place:
+
+- `cloud-init` disabled (`/etc/cloud/cloud-init.disabled`) and CUPS
+  disabled: neither does anything useful on this rig.
+- Companion and the keypad bridge no longer start from `multi-user.target`.
+  `scoreboard-deferred.target` wants both and is started either by
+  `scoreboard-kiosk-up.path` when the launcher reports the overlay up, or
+  by `scoreboard-deferred-fallback.timer` 180 s after boot, whichever is
+  first. If the kiosk never comes up, Companion still starts.
+
+The real fix is faster storage (NVMe); see the migration plan.
 
 ## Reliability and crash capture
 

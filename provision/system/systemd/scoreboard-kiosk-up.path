@@ -1,0 +1,9 @@
+[Unit]
+Description=Start deferred services when the kiosk overlay is up
+
+[Path]
+PathExists=/run/user/1000/scoreboard-kiosk-up
+Unit=scoreboard-deferred.target
+
+[Install]
+WantedBy=multi-user.target

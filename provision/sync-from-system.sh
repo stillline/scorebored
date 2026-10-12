@@ -27,12 +27,11 @@ for u in scorebored atem-discovery-relay companion companion-keyboard-controller
 done
 copy /etc/systemd/journald.conf.d/50-persistent-storage.conf systemd/journald.conf.d/50-persistent-storage.conf
 copy /usr/local/bin/atem-discovery-relay.py bin/atem-discovery-relay.py
-copy /usr/local/sbin/logind-boot-probe.sh  bin/logind-boot-probe.sh
-copy /etc/systemd/system/logind-boot-probe.service systemd/logind-boot-probe.service
 copy "$HOME/.config/labwc/environment"      labwc/environment
-copy /etc/lightdm/lightdm.conf.d/50-timed-session.conf lightdm/50-timed-session.conf
-copy /etc/lightdm/Xsession-timed           lightdm/Xsession-timed
-copy /etc/lightdm/labwc-timed              lightdm/labwc-timed
+for u in scoreboard-deferred.target scoreboard-kiosk-up.path scoreboard-deferred-fallback.timer; do
+    copy /etc/systemd/system/$u             systemd/$u
+done
+copy /etc/cloud/cloud-init.disabled        cloud/cloud-init.disabled
 
 # NetworkManager: uplink and bridge profiles only (no Wi-Fi client PSKs)
 for p in venue_ethernet netgear_hotspot mobile_router tmobile_hotspot switcher-bridge bridge-slave-end0; do

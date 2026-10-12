@@ -1,0 +1,9 @@
+[Unit]
+Description=Start deferred services 180 s after boot even if the kiosk never reports up
+
+[Timer]
+OnBootSec=180s
+Unit=scoreboard-deferred.target
+
+[Install]
+WantedBy=multi-user.target

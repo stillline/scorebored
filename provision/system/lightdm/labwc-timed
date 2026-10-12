@@ -1,6 +1,0 @@
-#!/bin/sh
-# Diagnostic (2026-10-12): stamp the moment Xsession hands over to labwc, then
-# start labwc-pi in debug mode so its own log (in ~/.xsession-errors) shows
-# each initialisation step with timestamps.
-echo "session-timed: exec labwc at $(date +%T.%3N) (up $(cut -d' ' -f1 /proc/uptime)s)" >&2
-exec /usr/bin/labwc-pi -d
