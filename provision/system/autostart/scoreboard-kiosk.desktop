@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Scoreboard Kiosk
+Exec=/home/matthew/bin/scorebored/delayed-kiosk-start.sh
+Hidden=true
+NoDisplay=true
+X-GNOME-Autostart-enabled=false
+StartupNotify=false

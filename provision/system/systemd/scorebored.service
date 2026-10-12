@@ -1,0 +1,21 @@
+[Unit]
+Description=Scorebored - Live Scoreboard Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=matthew
+Group=matthew
+Environment=HOME=/home/matthew
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+WorkingDirectory=/home/matthew/bin/scorebored
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=scorebored
+
+[Install]
+WantedBy=multi-user.target

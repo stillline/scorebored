@@ -1,0 +1,17 @@
+[Unit]
+Description=Bitfocus Companion
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=matthew
+Group=companion
+WorkingDirectory=/opt/companion
+ExecStart=/opt/companion/companion_headless.sh
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

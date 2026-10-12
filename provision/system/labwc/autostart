@@ -1,0 +1,53 @@
+#!/bin/sh
+# ~/.config/labwc/autostart
+# labwc runs this WITH --merge-config, so /etc/xdg/labwc/autostart also runs,
+# CONCURRENTLY with this file. That launches wf-panel-pi and pcmanfm-pi via
+# lwrespawn.
+#
+# This Pi has exactly one HDMI output (HDMI-A-2, feeding the ATEM), which the
+# Chromium kiosk owns. There is no second monitor for a panel or desktop, so
+# we do not want wf-panel-pi or pcmanfm --desktop at all: anything they draw
+# leaks onto the ATEM feed whenever Chromium is not covering the screen.
+#
+# Because the two autostart files run at the same time, the system watchers
+# may not have exec'd yet when we get here. A plain pkill then misses them and
+# the surviving watcher respawns the panel a second later. So: wait for each
+# watcher to exist before killing it.
+
+kill_system_watcher() {
+    # $1 = program path as it appears in /etc/xdg/labwc/autostart
+    i=0
+    while [ $i -lt 50 ]; do
+        if pgrep -f "lwrespawn $1" >/dev/null 2>&1; then
+            break
+        fi
+        i=$((i + 1))
+        sleep 0.1
+    done
+    pkill -f "lwrespawn $1" 2>/dev/null || true
+}
+
+kill_system_watcher /usr/bin/wf-panel-pi
+kill_system_watcher /usr/bin/pcmanfm-pi
+sleep 0.5
+
+# Now kill the processes themselves (no watcher to restart them).
+# pcmanfm-pi is a wrapper shell around "pcmanfm --desktop"; kill both, or the
+# desktop process survives as an orphan.
+pkill -x wf-panel-pi 2>/dev/null || true
+pkill -x pcmanfm-pi 2>/dev/null || true
+pkill -x pcmanfm 2>/dev/null || true
+
+# Scoreboard display launcher — covers the screen with black immediately, then
+# waits for the server and launches Chromium kiosk
+/home/matthew/bin/scorebored/launch-display.sh &
+
+# Diagnostic: report to ~/.xsession-errors if a panel or desktop survived.
+(
+    sleep 5
+    n=$(pgrep -cx wf-panel-pi)
+    m=$(pgrep -cx pcmanfm)
+    if [ "$n" -ne 0 ] || [ "$m" -ne 0 ]; then
+        echo "autostart: WARNING: $n wf-panel-pi and $m pcmanfm processes running after startup" >&2
+    fi
+) &

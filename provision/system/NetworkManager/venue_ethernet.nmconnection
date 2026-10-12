@@ -1,0 +1,17 @@
+[connection]
+id=venue_ethernet
+uuid=5fa30b93-c5ef-4215-a270-0d17fb094844
+type=ethernet
+autoconnect-priority=-999
+interface-name=enx8cae4ccdd53b
+
+[ethernet]
+
+[ipv4]
+method=auto
+
+[ipv6]
+addr-gen-mode=default
+method=disabled
+
+[proxy]

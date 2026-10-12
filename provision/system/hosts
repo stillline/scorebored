@@ -1,0 +1,23 @@
+# Your system has configured 'manage_etc_hosts' as True.
+# As a result, if you wish for changes to this file to persist
+# then you will need to either
+# a.) make changes to the master file in /etc/cloud/templates/hosts.debian.tmpl
+# b.) change or remove the value of 'manage_etc_hosts' in
+#     /etc/cloud/cloud.cfg or cloud-config from user-data
+#
+127.0.1.1 switcherpi switcherpi
+127.0.0.1 localhost
+
+# The following lines are desirable for IPv6 capable hosts
+::1 localhost ip6-localhost ip6-loopback
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+
+
+# scorebored RTMP relay: pin YouTube ingest to IPv4 so nginx's rtmp push
+# config doesn't block/fail on DNS at boot (the Pi's IPv6 route is broken,
+# and resolution isn't always ready yet when nginx starts). Re-added here
+# (not plain /etc/hosts) because manage_etc_hosts regenerates /etc/hosts
+# from this template every boot. If the YouTube push ever fails, re-check
+# with: getent ahostsv4 a.rtmp.youtube.com
+142.251.35.76 a.rtmp.youtube.com

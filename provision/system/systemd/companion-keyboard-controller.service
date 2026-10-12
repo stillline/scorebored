@@ -1,0 +1,30 @@
+[Unit]
+Description=Bitfocus Companion Keyboard Controller
+After=network.target
+Wants=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/home/matthew/keycontrol
+ExecStart=/usr/bin/python3 /home/matthew/keycontrol/companion_keyboard_controller.py
+Restart=always
+RestartSec=5
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=companion-keyboard
+KillMode=process
+
+# Environment variables (if needed)
+Environment=PYTHONPATH=/home/matthew/keycontrol
+Environment=PYTHONUNBUFFERED=1
+
+# Security settings
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target
