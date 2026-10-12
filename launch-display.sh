@@ -29,6 +29,7 @@ xset s noblank
 # Killed once Chromium has painted its first frame.
 rm -f /tmp/cover-window.pid
 python3 "$SCRIPT_DIR/black-cover.py" &
+COVER_PID=$!
 
 # Brief pause to let the cover window render before anything else appears
 sleep 0.5
@@ -88,12 +89,14 @@ chromium \
 CHROMIUM_PID=$!
 ts "chromium started (pid $CHROMIUM_PID)"
 
-# Wait for Chromium to paint, then remove the black cover
+# Wait for Chromium to paint, then remove the black cover. Kill the cover by
+# the PID we started, not via its pid file: on a slow cold boot the cover can
+# take longer than this to map its window and write the file, and a kill
+# keyed on the file then silently misses, leaving the cover on top forever.
 sleep 4
-if [ -f /tmp/cover-window.pid ]; then
-    kill "$(cat /tmp/cover-window.pid)" 2>/dev/null || true
-    rm -f /tmp/cover-window.pid
-fi
+ts "removing cover (pid $COVER_PID)"
+kill "$COVER_PID" 2>/dev/null || true
+rm -f /tmp/cover-window.pid
 
 # Restart automatically if Chromium exits
 wait "$CHROMIUM_PID"
