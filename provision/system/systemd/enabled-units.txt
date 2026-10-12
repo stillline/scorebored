@@ -2,7 +2,6 @@ accounts-daemon.service
 apparmor.service
 apt-daily.timer
 apt-daily-upgrade.timer
-atem-discovery-relay.service
 avahi-daemon.service
 avahi-daemon.socket
 bluetooth.service

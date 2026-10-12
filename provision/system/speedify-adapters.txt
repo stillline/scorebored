@@ -8,6 +8,6 @@ enxb61974e9f0e2 Ethernet priority always
 enxc6c17d011488 Ethernet priority always
 enxfcde56ff0106 Ethernet priority always
 wlan0 Wi-Fi priority secondary
-wlx00c0cab7e676 Wi-Fi priority secondary
+wlx00c0cab7e676 Wi-Fi priority never
 wlx00c0cabb510a Wi-Fi priority always
 wlx44334c58e7af Wi-Fi priority automatic

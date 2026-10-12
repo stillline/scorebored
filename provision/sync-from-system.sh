@@ -35,7 +35,8 @@ for p in venue_ethernet netgear_hotspot mobile_router tmobile_hotspot switcher-b
 done
 
 # Boot-time scripts
-sudo -n crontab -l > "$OUT/cron/root.crontab" 2>/dev/null || { mkdir -p "$OUT/cron"; sudo -n crontab -l > "$OUT/cron/root.crontab" 2>/dev/null || echo "(empty)" > "$OUT/cron/root.crontab"; }
+mkdir -p "$OUT/cron"
+sudo -n crontab -l > "$OUT/cron/root.crontab" 2>/dev/null || echo "(empty)" > "$OUT/cron/root.crontab"
 crontab -l > "$OUT/cron/matthew.crontab" 2>/dev/null || echo "(empty)" > "$OUT/cron/matthew.crontab"
 copy /etc/rc.local                         rc.local
 copy /etc/hosts                            hosts
