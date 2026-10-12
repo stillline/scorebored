@@ -27,6 +27,9 @@ for u in scorebored atem-discovery-relay companion companion-keyboard-controller
 done
 copy /etc/systemd/journald.conf.d/50-persistent-storage.conf systemd/journald.conf.d/50-persistent-storage.conf
 copy /usr/local/bin/atem-discovery-relay.py bin/atem-discovery-relay.py
+copy /usr/local/sbin/logind-boot-probe.sh  bin/logind-boot-probe.sh
+copy /etc/systemd/system/logind-boot-probe.service systemd/logind-boot-probe.service
+copy "$HOME/.config/labwc/environment"      labwc/environment
 
 # NetworkManager: uplink and bridge profiles only (no Wi-Fi client PSKs)
 for p in venue_ethernet netgear_hotspot mobile_router tmobile_hotspot switcher-bridge bridge-slave-end0; do

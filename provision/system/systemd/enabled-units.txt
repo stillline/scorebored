@@ -30,6 +30,7 @@ hostapd.service
 iperf3.service
 keyboard-setup.service
 lightdm.service
+logind-boot-probe.service
 logrotate.timer
 man-db.timer
 ModemManager.service
