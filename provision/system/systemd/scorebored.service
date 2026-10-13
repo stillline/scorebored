@@ -1,7 +1,11 @@
 [Unit]
 Description=Scorebored - Live Scoreboard Server
-After=network-online.target
-Wants=network-online.target
+# Start as soon as NetworkManager is up, not after every uplink is online:
+# network-online.target waits for all auto-connect profiles (a slow venue or
+# home Wi-Fi association held the server back 35 s on 2026-10-12). The server
+# binds all interfaces, and the ATEM link and sync providers retry on their own.
+After=NetworkManager.service network.target
+Wants=NetworkManager.service
 
 [Service]
 Type=simple
