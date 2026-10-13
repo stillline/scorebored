@@ -23,6 +23,11 @@ const STATE_FILE = path.join(__dirname, 'gamestate.json');
 const BRACKET_FILE = path.join(__dirname, 'bracket.json');
 const PRESETS_DIR = path.join(__dirname, 'presets');
 const LOGOS_DIR = path.join(__dirname, 'public', 'logos');
+const OVERLAYS_DIR = path.join(__dirname, 'overlays');
+// An overlay JSON with `locked: true` is a default that ships with the repo
+// (overlays/overlay_daca270d.json, the Scorebug): every editor-driven
+// mutation route answers 423 for it, so the only way to change it is to
+// edit the file itself (then POST /api/display/reload).
 
 // ATEM Configuration
 const ATEM_IP = process.env.ATEM_IP || '10.42.0.100'; // Default ATEM IP
@@ -45,10 +50,29 @@ const defaultGameState = {
   clock: null,
   penalties: null,
   timeouts: null,
+  activeTimeout: null,
   status: null,
   has_game: false,
-  feed: [],
-  activePresetId: null,
+  // Which provider game the live fields describe (Shufflepolo's game id;
+  // null for Podium/manual). Lets a display tell "new game" from "same game".
+  gameId: null,
+  // The current game's penalties, {gameId, items: [{id, side, player,
+  // severity}]} or null. Displays announce an id they have not shown yet;
+  // see overlay-bind.js. Not a log: it is whatever the provider reports now.
+  penaltyLog: null,
+  // What /display currently renders: either a preset (the legacy
+  // element-based canvas system, kept working for existing presets but no
+  // longer editable - /editor is retired) or an overlay (pasted HTML/CSS,
+  // authored in /overlay-editor). null activeId falls back to /display's
+  // built-in minimal layout, same as before this was generalized beyond
+  // presets alone.
+  activeKind: null, // 'preset' | 'overlay' | null
+  activeId: null,
+  // Shows/hides display.html's on-screen diagnostic panel (socket status,
+  // render count, active item) remotely from /control - off by default
+  // since it's plain readable text sitting over the live HDMI output, not
+  // something to leave on for a real broadcast. See setDebugOverlay.
+  debugOverlay: false,
   commercialBreak: {
     active: false,
     videoPath: '',
@@ -83,6 +107,8 @@ function loadGameState() {
     if (fs.existsSync(STATE_FILE)) {
       const data = fs.readFileSync(STATE_FILE, 'utf8');
       const saved = JSON.parse(data);
+      // Retired fields from the kill-feed era; a saved state may still carry them.
+      for (const key of ['feed', '_rawEvents', '_lastGoal']) delete saved[key];
       console.log('Loaded saved game state:', saved);
       return { ...defaultGameState, ...saved };
     }
@@ -102,140 +128,21 @@ function saveGameState() {
   }
 }
 
-let nextFeedId = 1;
-function pushFeedEntry(type, fields) {
-  gameState.feed.push({ id: nextFeedId++, type, at: new Date().toISOString(), ...fields });
-}
-
-function activePenaltyIds(penalties) {
-  return new Set((penalties || []).map(p => p.id).filter(id => id != null));
-}
-
-function byId(list) {
-  return new Map((list || []).filter(e => e.id != null).map(e => [e.id, e]));
-}
-
-// Podium's penalty severity enum ("turnover"|"minor"|"major"|"ejection",
-// see podium_sync/podium/types.py) doubles as the feed's own vocabulary -
-// Shufflepolo's penalty codes are normalized to the same set in
-// applyShufflepoloSnapshot. One feedLabel() in scorebug-render.js can then
-// render either provider's penalties without knowing which one is live.
-function pushPenaltyFeedEntry(side, penalty) {
-  const type = penalty.severity === 'turnover' ? 'turnover'
-    : penalty.severity === 'minor' ? 'penalty_minor'
-    : penalty.severity === 'major' ? 'penalty_major'
-    : penalty.severity === 'ejection' ? 'ejection'
-    : 'penalty_start'; // unknown severity - fall back rather than drop it
-  pushFeedEntry(type, { side, player: penalty.player || null });
-}
-
-// Diffs a before/after pair of the fields every mutation site can touch and
-// appends feed entries for whatever changed. Generic across providers and
-// manual control actions alike - it only looks at gameState shape, never at
-// which call site produced the change.
-function diffAndLogFeed(before, after, { skipScoreDiff } = {}) {
-  if (!skipScoreDiff) {
-    // Podium announces the scorer out-of-band via _lastGoal (set only on
-    // the specific push for that goal - see applyPodiumSnapshot); fall back
-    // to an unattributed goal when it's not there (manual +/- controls,
-    // Shufflepolo's score fields, or a Podium push with no player).
-    const lastGoal = after._lastGoal;
-    if (after.leftScore > before.leftScore) pushFeedEntry('goal', { side: 'left', player: (lastGoal && lastGoal.side === 'home') ? lastGoal.player : null });
-    if (after.leftScore < before.leftScore) pushFeedEntry('goal_removed', { side: 'left' });
-    if (after.rightScore > before.rightScore) pushFeedEntry('goal', { side: 'right', player: (lastGoal && lastGoal.side === 'away') ? lastGoal.player : null });
-    if (after.rightScore < before.rightScore) pushFeedEntry('goal_removed', { side: 'right' });
-  }
-
-  const beforeTO = before.timeouts || {};
-  const afterTO = after.timeouts || {};
-  if (afterTO.left != null && beforeTO.left != null && afterTO.left < beforeTO.left) {
-    pushFeedEntry('timeout', { side: 'left' });
-  }
-  if (afterTO.right != null && beforeTO.right != null && afterTO.right < beforeTO.right) {
-    pushFeedEntry('timeout', { side: 'right' });
-  }
-
-  for (const side of ['left', 'right']) {
-    const beforeIds = activePenaltyIds(before.penalties && before.penalties[side]);
-    const afterPenalties = (after.penalties && after.penalties[side]) || [];
-    for (const penalty of afterPenalties) {
-      if (penalty.id != null && !beforeIds.has(penalty.id)) pushPenaltyFeedEntry(side, penalty);
-    }
-  }
-
-  // Shufflepolo-only: full cumulative goals/penalties/timeouts logs, set by
-  // applyShufflepoloSnapshot. Diffed by id against the previous push's log
-  // rather than against gameState.penalties/leftScore - Shufflepolo's
-  // penalty log is historical (never shrinks, unlike Podium's "active
-  // right now" list) and goals need per-scorer attribution the plain score
-  // diff above can't give, so this entirely replaces the generic score/
-  // penalty diff for whichever sides Shufflepolo is driving.
-  const beforeRaw = before._rawEvents;
-  const afterRaw = after._rawEvents;
-  if (afterRaw) {
-    const beforeGoals = byId(beforeRaw && beforeRaw.goals);
-    for (const goal of afterRaw.goals) {
-      if (!beforeGoals.has(goal.id)) pushFeedEntry('goal', { side: goal.side, player: goal.player });
-    }
-    const beforeTimeouts = byId(beforeRaw && beforeRaw.timeouts);
-    for (const timeout of afterRaw.timeouts) {
-      if (!beforeTimeouts.has(timeout.id)) pushFeedEntry('timeout', { side: timeout.side });
-    }
-    const beforePenalties = byId(beforeRaw && beforeRaw.penalties);
-    for (const penalty of afterRaw.penalties) {
-      if (!beforePenalties.has(penalty.id)) pushPenaltyFeedEntry(penalty.side, penalty);
-    }
-  }
-
-  const beforePhase = before.clock && before.clock.phase;
-  const afterPhase = after.clock && after.clock.phase;
-  if (afterPhase && beforePhase && afterPhase !== beforePhase) {
-    pushFeedEntry('period', { phase: afterPhase });
-  }
-
-  const beforeLive = before.status === 'in_progress';
-  const afterLive = after.status === 'in_progress';
-  // Shufflepolo has no status field - has_game is the closest proxy for
-  // "a game is on court right now" that provider exposes.
-  const beforeHasGame = before.status != null ? beforeLive : before.has_game;
-  const afterHasGame = after.status != null ? afterLive : after.has_game;
-
-  if (beforeHasGame && !afterHasGame) {
-    pushFeedEntry('game_end', { leftTeam: after.leftTeam, rightTeam: after.rightTeam, leftScore: after.leftScore, rightScore: after.rightScore });
-  } else if (!beforeHasGame && afterHasGame) {
-    pushFeedEntry('game_start', { leftTeam: after.leftTeam, rightTeam: after.rightTeam });
-  }
-}
-
-// Every mutation site should go through this rather than calling
-// saveGameState()/io.emit() directly, so the feed diff always runs against
-// a consistent before/after snapshot and every site gets it for free.
-function commitGameState(mutate, { skipScoreDiff } = {}) {
-  const before = {
-    leftScore: gameState.leftScore,
-    rightScore: gameState.rightScore,
-    timeouts: gameState.timeouts ? { ...gameState.timeouts } : null,
-    penalties: gameState.penalties
-      ? { left: [...(gameState.penalties.left || [])], right: [...(gameState.penalties.right || [])] }
-      : null,
-    clock: gameState.clock ? { phase: gameState.clock.phase } : null,
-    status: gameState.status,
-    has_game: gameState.has_game,
-    _lastGoal: null, // Podium's goal attribution is per-push, not cumulative - never diffed against a prior "before"
-    _rawEvents: gameState._rawEvents
-      ? {
-          goals: [...gameState._rawEvents.goals],
-          timeouts: [...gameState._rawEvents.timeouts],
-          penalties: [...gameState._rawEvents.penalties],
-        }
-      : null,
-  };
-
+// Every mutation site goes through this rather than calling saveGameState()/
+// io.emit() directly. The state is saved and broadcast only when it actually
+// changed: a sync push carrying the same game, score, clock and events as the
+// last one costs nothing downstream - no SD-card write, no socket broadcast
+// to every display. The comparison is the serialized state, so a mutation
+// that changes nothing (the common case for a re-read) is a no-op.
+let lastCommittedJson = null;
+function commitGameState(mutate) {
   mutate();
-
-  diffAndLogFeed(before, gameState, { skipScoreDiff });
+  const json = JSON.stringify(gameState);
+  if (json === lastCommittedJson) return false;
+  lastCommittedJson = json;
   saveGameState();
   io.emit('gameUpdate', gameState);
+  return true;
 }
 
 function getAvailableVideos() {
@@ -334,6 +241,7 @@ syncProviders.podium.onExit = () => {
     gameState.clock = null;
     gameState.penalties = null;
     gameState.timeouts = null;
+    gameState.activeTimeout = null;
     gameState.status = null;
   });
 };
@@ -344,9 +252,12 @@ syncProviders.shufflepolo = new SyncManager({
   script: path.join(__dirname, 'shufflepolo_sync', 'shufflepolo_sync.js'),
   command: 'node',
   configFile: path.join(__dirname, 'shufflepolo-config.json'),
-  configDefaults: { tournamentId: '', feedUrl: '', enabled: false },
+  configDefaults: { tournamentId: '', court: '1', feedUrl: '', enabled: false },
   requiredFields: ['tournamentId'],
   stateDir: path.join(__dirname, 'shufflepolo_sync', 'state'),
+  // The sync writes status.json on every read, including the 5-minute safety
+  // poll; a status older than this means the process is hung, not quiet.
+  staleAfterMs: 15 * 60_000,
   // Accepts a pasted tournament page URL (https://shufflepolo.com/t/<uuid>)
   // as well as a bare UUID, since that's the only place the UUID is visible
   // to the operator (Shufflepolo's feed has no list/lookup endpoint).
@@ -357,21 +268,20 @@ syncProviders.shufflepolo = new SyncManager({
   },
   buildEnv: (config) => ({
     SHUFFLEPOLO_TOURNAMENT: config.tournamentId,
+    SHUFFLEPOLO_COURT: String(config.court || 1),
     ...(config.feedUrl ? { SHUFFLEPOLO_FEED_URL: config.feedUrl } : {}),
     PUSH_URL: `http://localhost:${PORT}/api/sync/shufflepolo/push`,
   }),
   // No API key - the feed is public/anonymous, nothing to mask.
   maskConfig: (config) => ({
     tournamentId: config.tournamentId,
+    court: config.court,
     feedUrl: config.feedUrl,
     enabled: config.enabled,
   }),
 });
 syncProviders.shufflepolo.onExit = () => {
-  commitGameState(() => {
-    gameState.clock = null;
-    gameState.has_game = false;
-  });
+  commitGameState(() => applyShufflepoloSnapshot({ has_game: false, game_id: gameState.gameId }));
 };
 
 // One-off read-only lookup of all tournaments visible to an API key, so the
@@ -422,17 +332,15 @@ function listChallongeTournaments(apiKey) {
 // loadMatchupByIndex uses, so the director's swap control stays authoritative
 // regardless of which physical side Podium calls "home".
 function applyPodiumSnapshot(snapshot) {
+  gameState.gameId = null;
   gameState.clock = snapshot.clock || null;
   gameState.status = snapshot.has_game ? snapshot.status : null;
-  // Transient, not diffed by id: only set on the specific push that
-  // announces a new goal (podium_sync.py's "goal" trigger), so
-  // diffAndLogFeed can label that one feed entry with the scorer and never
-  // needs to track a cumulative goal log the way Shufflepolo's does.
-  gameState._lastGoal = snapshot.last_goal || null;
 
   if (!snapshot.has_game) {
     gameState.penalties = null;
     gameState.timeouts = null;
+    gameState.activeTimeout = null;
+    gameState.penaltyLog = null;
     return;
   }
 
@@ -440,6 +348,11 @@ function applyPodiumSnapshot(snapshot) {
   const awayPenalties = (snapshot.penalties && snapshot.penalties.away) || [];
   const homeTimeouts = snapshot.home.timeouts_left;
   const awayTimeouts = snapshot.away.timeouts_left;
+  // podium_sync.py's active_timeout.side is "home"/"away", same vocabulary
+  // as penalties - mapped the same sidesSwapped-respecting way below.
+  const at = snapshot.active_timeout;
+  const homeSide = gameState.sidesSwapped ? 'right' : 'left';
+  const awaySide = gameState.sidesSwapped ? 'left' : 'right';
 
   if (gameState.sidesSwapped) {
     gameState.leftTeam = snapshot.away.name;
@@ -456,6 +369,11 @@ function applyPodiumSnapshot(snapshot) {
     gameState.penalties = { left: homePenalties, right: awayPenalties };
     gameState.timeouts = { left: homeTimeouts, right: awayTimeouts };
   }
+  gameState.activeTimeout = at ? { side: at.side === 'home' ? homeSide : awaySide, remainingSeconds: at.remaining_seconds } : null;
+  // Podium reports the penalties active right now, each with a stable id -
+  // enough for a display to announce the ones it has not shown yet.
+  const toLog = (list, side) => list.filter(p => p.id != null).map(p => ({ id: p.id, side, player: p.player || null, severity: p.severity || null }));
+  gameState.penaltyLog = { gameId: null, items: [...toLog(homePenalties, homeSide), ...toLog(awayPenalties, awaySide)] };
 }
 
 // Shufflepolo's penalty `code` -> the severity vocabulary shared with
@@ -468,82 +386,85 @@ const SHUFFLEPOLO_PENALTY_CODE = {
   pm: 'ejection',
 };
 
-// Applies a live snapshot from shufflepolo_sync.js to gameState. Shufflepolo
+// Applies a push from shufflepolo_sync.js: the followed court's current game
+// as Shufflepolo's feed describes it (see buildPush there). Shufflepolo
 // reports team1/team2 (not home/away like Podium), but the same
-// sidesSwapped-respecting mapping applies. Unlike Podium (which reports only
-// currently-active penalties and a single just-happened goal), Shufflepolo's
-// feed hands back the game's full cumulative goals/penalties/timeouts logs
-// on every push - diffAndLogFeed diffs those by id against what it logged
-// last time, same idea as Podium's active-penalty-set diff.
+// sidesSwapped-respecting mapping applies. has_game is true only while that
+// game is live; otherwise the last names and score stay on screen and every
+// time-bound field (clock, penalties, timeouts, banners) is cleared.
 function applyShufflepoloSnapshot(snapshot) {
-  // clock_offset_ms rides along on gameState.clock itself (not a separate
-  // top-level field) so it survives the existing `{...currentClock,
-  // localAnchorAt}` spread in display.html/editor.html without those call
-  // sites needing to know about it individually - see computeClockDisplay
-  // in scorebug-render.js for how it's used.
-  //
-  // This is shufflepolo_sync.js's own measured offset (their server's clock
-  // minus this device's, from a t0/t1-bracketed round trip against the
-  // actual HTTP request - see updateClockOffset there), NOT a raw
-  // server_now timestamp. Per a Shufflepolo dev's own analysis of our
-  // drift: computing "now minus server_now" this far downstream (after
-  // this process's own POST to this server, then this server's socket
-  // broadcast to the browser) would measure the offset against a
-  // server_now that's already stale by however long those extra hops
-  // took, re-introducing per-hop timing error on every single push. The
-  // offset is measured once, close to the real round trip, and only ever
-  // added from here on - nothing downstream recomputes it.
-  gameState.clock = snapshot.clock ? { ...snapshot.clock, clock_offset_ms: snapshot.clock_offset_ms ?? null } : null;
-  gameState.has_game = !!snapshot.has_game;
+  const live = !!snapshot.has_game;
+  gameState.gameId = snapshot.game_id || null;
+  gameState.has_game = live;
+  gameState.status = live ? 'in_progress' : null;
+  // clock_offset_ms (Shufflepolo's clock minus this machine's, measured by
+  // shufflepolo_sync.js at the real HTTP round trip) rides along on the clock
+  // object so display code that spreads the clock carries it for free - see
+  // computeClockDisplay in scorebug-render.js. Nothing downstream re-derives it.
+  gameState.clock = live && snapshot.clock ? { ...snapshot.clock, clock_offset_ms: snapshot.clock_offset_ms ?? null } : null;
 
-  // Deliberately NOT resetting _rawEvents to null here. has_game flips to
-  // false any time Shufflepolo's live[] briefly comes up empty (between
-  // games, or a transient gap in what their feed considers "live" right
-  // now) - nulling the goals/penalties/timeouts log on every such blip
-  // means the NEXT has_game:true push has no prior history to diff
-  // against, so diffAndLogFeed (which only looks at ids it already knows
-  // about) treats every goal/penalty the game has ever had as brand new
-  // and replays the whole match into the kill feed at once. Keeping the
-  // last known log around means a genuinely new game (different goal ids
-  // entirely) still diffs correctly - its first push just logs all of
-  // its own goals as new, same as any other id was never seen.
-  if (!snapshot.has_game) return;
+  if (!live) {
+    gameState.penalties = null;
+    gameState.timeouts = null;
+    gameState.activeTimeout = null;
+    gameState.penaltyLog = null;
+    return;
+  }
 
-  const sideForTeamId = (teamId) => {
-    const isTeam1 = teamId === snapshot.team1_id;
-    if (gameState.sidesSwapped) return isTeam1 ? 'right' : 'left';
-    return isTeam1 ? 'left' : 'right';
-  };
+  const [leftTeam, rightTeam] = gameState.sidesSwapped ? [snapshot.team2, snapshot.team1] : [snapshot.team1, snapshot.team2];
+  gameState.leftTeam = leftTeam.name;
+  gameState.rightTeam = rightTeam.name;
+  gameState.leftScore = leftTeam.score ?? 0;
+  gameState.rightScore = rightTeam.score ?? 0;
+  const sideFor = (teamId) => (teamId === leftTeam.team_id ? 'left' : 'right');
 
-  gameState._rawEvents = {
-    goals: (snapshot.goals || []).map(g => ({
-      id: g.id,
-      side: sideForTeamId(g.team_id),
-      player: g.player ? g.player.name : null,
-    })),
-    timeouts: (snapshot.timeouts || []).map(t => ({
-      id: t.id,
-      side: sideForTeamId(t.team_id),
-    })),
-    penalties: (snapshot.penalties || []).map(p => ({
+  // Per the feed contract, an event list is null when this read did not
+  // include it ("not included", never "none"): keep what we had in that case.
+  if (Array.isArray(snapshot.penalties)) {
+    const penalties = snapshot.penalties.map(p => ({
       id: p.id,
-      side: sideForTeamId(p.team_id),
+      side: sideFor(p.team_id),
       player: p.player ? p.player.name : null,
       severity: SHUFFLEPOLO_PENALTY_CODE[p.code] || p.code,
-    })),
-  };
-
-  if (gameState.sidesSwapped) {
-    gameState.leftTeam = snapshot.team2.name;
-    gameState.rightTeam = snapshot.team1.name;
-    gameState.leftScore = snapshot.team2.score;
-    gameState.rightScore = snapshot.team1.score;
-  } else {
-    gameState.leftTeam = snapshot.team1.name;
-    gameState.rightTeam = snapshot.team2.name;
-    gameState.leftScore = snapshot.team1.score;
-    gameState.rightScore = snapshot.team2.score;
+    }));
+    gameState.penalties = { left: penalties.filter(p => p.side === 'left'), right: penalties.filter(p => p.side === 'right') };
+    gameState.penaltyLog = { gameId: gameState.gameId, items: penalties };
   }
+  if (Array.isArray(snapshot.timeouts)) {
+    const timeouts = snapshot.timeouts.map(t => ({ id: t.id, side: sideFor(t.team_id), at: t.at }));
+    const used = (side) => timeouts.filter(t => t.side === side).length;
+    gameState.timeouts = {
+      left: Math.max(0, SHUFFLEPOLO_TIMEOUTS_PER_TEAM - used('left')),
+      right: Math.max(0, SHUFFLEPOLO_TIMEOUTS_PER_TEAM - used('right')),
+    };
+    if (gameState.clock && gameState.clock.status === 'running') {
+      for (const t of timeouts) endedTimeoutIds.add(t.id);
+    }
+    gameState.activeTimeout = computeShufflepoloActiveTimeout(timeouts, gameState.clock);
+  }
+}
+
+// Platform constants from Shufflepolo's own game console (src/lib/gameConsole.ts
+// and the call_game_event database function): every tournament, not a house rule.
+const SHUFFLEPOLO_TIMEOUT_SECONDS = 120;
+const SHUFFLEPOLO_TIMEOUTS_PER_TEAM = 2;
+
+// Timeouts that are over. Shufflepolo's console stops the clock when a timeout
+// is called and ends the timeout when the clock is started again, so "the
+// clock has run since this timeout was called" is the end signal; the feed
+// carries no end time of its own. In-memory only: after a restart the 120 s
+// window below already hides any timeout older than that.
+const endedTimeoutIds = new Set();
+
+function computeShufflepoloActiveTimeout(timeouts, clock) {
+  if (!timeouts.length || !clock || clock.status === 'running') return null;
+  const newest = timeouts[timeouts.length - 1];
+  if (!newest.at || endedTimeoutIds.has(newest.id)) return null;
+  // `at` is on Shufflepolo's clock; compare on that clock too, since this
+  // machine's wall clock may be off by far more than the offset (no RTC).
+  const nowOnServer = Date.now() + (clock.clock_offset_ms || 0);
+  const remaining = SHUFFLEPOLO_TIMEOUT_SECONDS - (nowOnServer - Date.parse(newest.at)) / 1000;
+  return remaining > 0 ? { side: newest.side, remainingSeconds: Math.ceil(remaining) } : null;
 }
 
 for (const manager of Object.values(syncProviders)) {
@@ -571,8 +492,14 @@ app.get('/control', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'control.html'));
 });
 
-app.get('/editor', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'editor.html'));
+// /editor (the element-based shape/text canvas) is retired - overlay-editor
+// is the only scorebug authoring page now. /editor itself 404s like any
+// other removed route; existing presets still render on /display (and are
+// still selectable as "active") via the preset API routes further down,
+// which are kept for backward compatibility, just with no page left to
+// edit them from.
+app.get('/overlay-editor', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'overlay-editor.html'));
 });
 
 app.get('/network', (req, res) => {
@@ -649,27 +576,42 @@ const SYNC_PUSH_HANDLERS = {
   shufflepolo: applyShufflepoloSnapshot,
 };
 
-// Shufflepolo's score changes are fully covered by its own cumulative
-// `goals` log (diffed in diffAndLogFeed via _rawEvents, with scorer
-// attribution) - running the generic score diff too would double-log every
-// goal. Podium has no such log (only a per-push _lastGoal), so it still
-// needs the generic diff.
-const SYNC_PUSH_OPTIONS = {
-  shufflepolo: { skipScoreDiff: true },
-};
-
 app.post('/api/sync/:provider/push', express.json(), (req, res) => {
   const applySnapshot = SYNC_PUSH_HANDLERS[req.params.provider];
   if (!applySnapshot) {
     return res.status(404).json({ error: `"${req.params.provider}" does not accept pushes` });
   }
   try {
-    commitGameState(() => applySnapshot(req.body), SYNC_PUSH_OPTIONS[req.params.provider]);
+    commitGameState(() => applySnapshot(req.body));
     res.json({ ok: true });
   } catch (error) {
     console.error(`Error applying ${req.params.provider} push:`, error);
     res.status(400).json({ error: error.message });
   }
+});
+
+// Asks a running sync subprocess for a full re-read and push, even if nothing
+// changed on the platform - recovers a display that dropped an update locally.
+app.post('/api/sync/:provider/resync', (req, res) => {
+  const manager = syncProviders[req.params.provider];
+  if (!manager) return res.status(404).json({ error: `Unknown provider "${req.params.provider}"` });
+  res.json({ ok: manager.resync() });
+});
+
+// Same as the socket's reloadDisplay, over HTTP (curl-able from a shell).
+app.post('/api/display/reload', (req, res) => {
+  io.emit('reloadDisplay');
+  res.json({ ok: true });
+});
+
+// Same as the socket's toggleSync, over HTTP - for scripts such as
+// simulate-game-states.js that need the server (not themselves) to stop and
+// later restart a provider's supervised child.
+app.post('/api/sync/:provider/toggle', express.json(), (req, res) => {
+  const manager = syncProviders[req.params.provider];
+  if (!manager) return res.status(404).json({ error: `Unknown provider "${req.params.provider}"` });
+  manager.toggle(!!req.body.enabled);
+  res.json({ ok: true, enabled: manager.config.enabled, running: manager.isRunning() });
 });
 
 app.get('/api/bracket', (req, res) => {
@@ -848,9 +790,770 @@ app.delete('/api/presets/:id', (req, res) => {
     const filePath = presetPath(req.params.id);
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'No such preset' });
     fs.unlinkSync(filePath);
+    // If this preset was live, clear the active pointer rather than
+    // leaving gameState.activeId dangling at a file that no longer exists
+    // - /display would otherwise keep trying to fetch it on every
+    // gameUpdate and silently fail into a blank/stale stage instead of
+    // its built-in fallback layout.
+    if (gameState.activeKind === 'preset' && gameState.activeId === req.params.id) {
+      commitGameState(() => { gameState.activeKind = null; gameState.activeId = null; });
+    }
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Standalone overlays ──
+// The only visual-authoring system now that the element-based preset
+// canvas (/editor) has been retired: an overlay is a set of independent
+// HTML/CSS BLOCKS (own <style>, own markup, own Resolve-style transform -
+// think "layers," the same mental model logos already use) plus any
+// number of PNG logos, all composited onto one 1920x1080 canvas. Each
+// block is fully isolated from every other block (and from the author's
+// own markup collisions - two blocks can both use a class called
+// .container with different rules and never conflict) by rendering in its
+// OWN iframe, server-composited; see GET /overlay/:id (the composite
+// page: one <iframe> per block + logo <img>s, stacked by z) and
+// GET /overlay/:id/block/:blockId (one block's actual document, with the
+// live-binding scripts injected - this is what each iframe's src points
+// at).
+//
+// Live data binding is opt-in, per block - it works by scanning a block's
+// markup for [data-role] (optionally [data-side]) attributes using the
+// same role vocabulary resolveBinding() already understands (teamName,
+// score, clock, penalties, timeouts, ...) and writing resolved text
+// into those nodes on every gameUpdate. Anything without a data-role is
+// left completely alone - so a block can be purely decorative, partially
+// live, or fully live, author's choice, with no required structure beyond
+// valid HTML.
+//
+// Versioned exactly like the old preset system was: versions[] + an
+// activeVersion pointer, saving always APPENDS a new version (never
+// overwrites), and gameState.activeId (see setActive) points at one
+// overlay whose activeVersion is what /display currently renders - same
+// "set active" / rollback semantics presets used to have. A version
+// snapshots ALL of that version's blocks together (so rolling back
+// restores every block's content as of that save, not just one).
+//
+// blockTransforms (keyed by block id) and `logos` both live at the
+// OVERLAY level, not per-version - they're positioning/presentation data
+// independent of whichever markup version happens to be active, same
+// reasoning logos already used before blocks existed. A block's own id is
+// stable across versions (only its `html` changes when you edit it), so
+// its transform and a rolled-back-to version both still line up correctly.
+
+function overlayPath(id) {
+  return path.join(OVERLAYS_DIR, `${id}.json`);
+}
+
+function isValidOverlayId(id) {
+  return typeof id === 'string' && /^[a-zA-Z0-9_-]+$/.test(id);
+}
+
+function nextUnnamedOverlayName() {
+  const files = fs.existsSync(OVERLAYS_DIR) ? fs.readdirSync(OVERLAYS_DIR).filter(f => f.endsWith('.json')) : [];
+  let highest = 0;
+  for (const f of files) {
+    try {
+      const overlay = JSON.parse(fs.readFileSync(path.join(OVERLAYS_DIR, f), 'utf8'));
+      const m = /^Unnamed-Overlay_(\d+)$/.exec(overlay.name || '');
+      if (m) highest = Math.max(highest, parseInt(m[1], 10));
+    } catch (e) { /* skip unreadable files */ }
+  }
+  return 'Unnamed-Overlay_' + String(highest + 1).padStart(2, '0');
+}
+
+function overlayActiveVersionOf(overlay) {
+  return (overlay.versions || []).find(v => v.version === overlay.activeVersion) || null;
+}
+
+// Resolves the BLOCKS an overlay currently serves - its active version's
+// blocks array, falling back to the newest version if activeVersion
+// somehow doesn't match any stored version (shouldn't happen, but matches
+// the defensive style of activeVersionOf's preset equivalent).
+function overlayActiveBlocks(overlay) {
+  const active = overlayActiveVersionOf(overlay);
+  if (active) return active.blocks || [];
+  const versions = overlay.versions || [];
+  return versions.length ? (versions[versions.length - 1].blocks || []) : [];
+}
+
+function overlayActiveBlock(overlay, blockId) {
+  return overlayActiveBlocks(overlay).find(b => b.id === blockId) || null;
+}
+
+app.get('/api/overlays', (req, res) => {
+  try {
+    if (!fs.existsSync(OVERLAYS_DIR)) return res.json([]);
+    const files = fs.readdirSync(OVERLAYS_DIR).filter(f => f.endsWith('.json'));
+    const summaries = files.map(f => {
+      // readOverlayOrNull (not a raw read) so a pre-versioning overlay on
+      // disk gets migrated to versions[]/activeVersion before its summary
+      // is computed - otherwise this list would show versionCount: 0 for
+      // any overlay saved before that migration existed, even though
+      // GET /api/overlays/:id on the same file correctly shows versions.
+      const id = f.slice(0, -'.json'.length);
+      const overlay = readOverlayOrNull(id);
+      return {
+        id: overlay.id,
+        name: overlay.name,
+        updatedAt: overlay.updatedAt,
+        versionCount: (overlay.versions || []).length,
+        activeVersion: overlay.activeVersion,
+        rating: Number.isInteger(overlay.rating) ? overlay.rating : 0,
+        locked: !!overlay.locked,
+      };
+    });
+    res.json(summaries);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/overlays/:id', (req, res) => {
+  if (!isValidOverlayId(req.params.id)) return res.status(400).json({ error: 'Invalid overlay id' });
+  try {
+    const overlay = readOverlayOrNull(req.params.id);
+    if (!overlay) return res.status(404).json({ error: 'No such overlay' });
+    res.json(overlay);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Creates a new overlay with one version (version 1). Body carries that
+// first version's { html }; name defaults to an auto-numbered
+// Unnamed-Overlay_NN when not given or blank - same convention presets used.
+// Creates a new overlay with one version (version 1) holding ONE block
+// seeded from the pasted HTML - simplest possible starting point; add more
+// blocks afterward via POST .../blocks. Body carries { name, html } for
+// that first block (html defaults to empty, same as before blocks existed).
+app.post('/api/overlays', express.json({ limit: '2mb' }), (req, res) => {
+  try {
+    fs.mkdirSync(OVERLAYS_DIR, { recursive: true });
+    const id = 'overlay_' + crypto.randomBytes(4).toString('hex');
+    const now = new Date().toISOString();
+    const name = (req.body.name || '').trim() || nextUnnamedOverlayName();
+    const blockId = 'block_' + crypto.randomBytes(4).toString('hex');
+    const overlay = {
+      id, name,
+      versions: [{ version: 1, blocks: [{ id: blockId, name: 'Block 1', html: req.body.html || '' }], createdAt: now }],
+      activeVersion: 1,
+      logos: [],
+      blockTransforms: { [blockId]: { ...DEFAULT_HTML_TRANSFORM } },
+      createdAt: now, updatedAt: now,
+    };
+    fs.writeFileSync(overlayPath(id), JSON.stringify(overlay, null, 2));
+    res.json(overlay);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Appends a new version - never overwrites, so a draft never clobbers
+// what's actually on air (same contract as POST /api/presets/:id/versions).
+// Does not touch activeVersion or logos.
+// Body: { blocks: [{id, name, html}, ...], name? }. blocks is the FULL set
+// of this overlay's blocks as of this save (content only - transforms live
+// separately in blockTransforms, untouched by this route) - a version
+// snapshots every block together so rolling back later restores all of
+// them consistently, not just whichever one happened to be edited. Any
+// block id here that isn't already in blockTransforms gets a default
+// transform assigned (see readOverlayOrNull's same fill-in-the-gaps logic)
+// so a brand new block added in this save still renders somewhere sane.
+app.post('/api/overlays/:id/versions', express.json({ limit: '2mb' }), (req, res) => {
+  if (!isValidOverlayId(req.params.id)) return res.status(400).json({ error: 'Invalid overlay id' });
+  if (!Array.isArray(req.body.blocks)) return res.status(400).json({ error: 'blocks array required' });
+  try {
+    const overlay = readOverlayOrNull(req.params.id);
+    if (!overlay) return res.status(404).json({ error: 'No such overlay' });
+    if (overlay.locked) return res.status(423).json({ error: 'This overlay is a locked default: it is edited programmatically, not from the editor.' });
+    const now = new Date().toISOString();
+    const blocks = req.body.blocks.map(b => ({
+      id: typeof b.id === 'string' && b.id ? b.id : 'block_' + crypto.randomBytes(4).toString('hex'),
+      name: typeof b.name === 'string' && b.name.trim() ? b.name.trim() : 'Block',
+      html: typeof b.html === 'string' ? b.html : '',
+    }));
+    // No time-based versioning: an overlay has exactly one version, and a
+    // save overwrites it in place. (The versions array is kept for the file
+    // shape and the ?version= block routes; it is always [v1].)
+    const createdAt = (overlay.versions[0] && overlay.versions[0].createdAt) || now;
+    overlay.versions = [{ version: 1, blocks, createdAt, updatedAt: now }];
+    overlay.activeVersion = 1;
+    if (typeof req.body.name === 'string' && req.body.name.trim()) overlay.name = req.body.name.trim();
+    // Fill in a default transform for any block id not already tracked
+    // (a brand new block added in this save) - same z-stacking convention
+    // as readOverlayOrNull and POST /logos.
+    let maxZ = -1;
+    for (const t of Object.values(overlay.blockTransforms)) if (Number.isFinite(t.z)) maxZ = Math.max(maxZ, t.z);
+    for (const l of overlay.logos) if (Number.isFinite(l.z)) maxZ = Math.max(maxZ, l.z);
+    for (const block of blocks) {
+      if (!overlay.blockTransforms[block.id]) overlay.blockTransforms[block.id] = { ...DEFAULT_HTML_TRANSFORM, z: ++maxZ };
+    }
+    writeOverlay(overlay);
+    res.json(overlay);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Points this overlay at a specific version - "I like this draft, use it"
+// right after saving, or rolling back to an older version later. Does NOT
+// by itself make the overlay live on the broadcast; that's
+// gameState.activeId/activeKind (set via the setActive socket event). If
+// this overlay happens to already be the live one, re-pointing its
+// activeVersion here is what /overlay/:id actually serves on next load.
+// Copies an overlay (the locked Scorebug default included) to a new,
+// unlocked overlay: name from the body or "<name> copy", blocks from the body
+// (the editor sends its edited code) or the source's, transforms and logos
+// carried over. This is how the editor "saves" an edit to the locked default.
+app.post('/api/overlays/:id/duplicate', express.json({ limit: '2mb' }), (req, res) => {
+  if (!isValidOverlayId(req.params.id)) return res.status(400).json({ error: 'Invalid overlay id' });
+  try {
+    const source = readOverlayOrNull(req.params.id);
+    if (!source) return res.status(404).json({ error: 'No such overlay' });
+    const now = new Date().toISOString();
+    const id = 'overlay_' + crypto.randomBytes(4).toString('hex');
+    const name = (typeof req.body.name === 'string' && req.body.name.trim()) || `${source.name} copy`;
+    const sourceBlocks = (source.versions.find(v => v.version === source.activeVersion) || source.versions[0] || { blocks: [] }).blocks;
+    const blocks = (Array.isArray(req.body.blocks) ? req.body.blocks : sourceBlocks).map(b => ({
+      id: typeof b.id === 'string' && b.id ? b.id : 'block_' + crypto.randomBytes(4).toString('hex'),
+      name: typeof b.name === 'string' && b.name.trim() ? b.name.trim() : 'Block',
+      html: typeof b.html === 'string' ? b.html : '',
+    }));
+    const blockTransforms = {};
+    for (const block of blocks) {
+      blockTransforms[block.id] = { ...(source.blockTransforms && source.blockTransforms[block.id] ? source.blockTransforms[block.id] : DEFAULT_HTML_TRANSFORM) };
+    }
+    const overlay = {
+      id, name,
+      versions: [{ version: 1, blocks, createdAt: now }],
+      activeVersion: 1,
+      logos: JSON.parse(JSON.stringify(source.logos || [])),
+      blockTransforms,
+      createdAt: now, updatedAt: now,
+    };
+    fs.writeFileSync(overlayPath(id), JSON.stringify(overlay, null, 2));
+    res.json(overlay);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Operator's 0-3 star rating, for sorting through templates in the editor.
+// Metadata, not content, so it is allowed on the locked default too.
+app.put('/api/overlays/:id/rating', express.json(), (req, res) => {
+  if (!isValidOverlayId(req.params.id)) return res.status(400).json({ error: 'Invalid overlay id' });
+  const rating = parseInt(req.body.rating, 10);
+  if (!Number.isInteger(rating) || rating < 0 || rating > 3) return res.status(400).json({ error: 'rating must be 0-3' });
+  try {
+    const overlay = readOverlayOrNull(req.params.id);
+    if (!overlay) return res.status(404).json({ error: 'No such overlay' });
+    overlay.rating = rating;
+    writeOverlay(overlay);
+    res.json(overlay);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.put('/api/overlays/:id/active-version', express.json(), (req, res) => {
+  if (!isValidOverlayId(req.params.id)) return res.status(400).json({ error: 'Invalid overlay id' });
+  const version = parseInt(req.body.version, 10);
+  if (!Number.isInteger(version)) return res.status(400).json({ error: 'Invalid version' });
+  try {
+    const overlay = readOverlayOrNull(req.params.id);
+    if (!overlay) return res.status(404).json({ error: 'No such overlay' });
+    if (!overlay.versions.some(v => v.version === version)) return res.status(404).json({ error: 'No such version' });
+    overlay.activeVersion = version;
+    writeOverlay(overlay);
+    res.json(overlay);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/overlays/:id', (req, res) => {
+  if (!isValidOverlayId(req.params.id)) return res.status(400).json({ error: 'Invalid overlay id' });
+  try {
+    const filePath = overlayPath(req.params.id);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'No such overlay' });
+    const existing = readOverlayOrNull(req.params.id);
+    if (existing && existing.locked) return res.status(423).json({ error: 'This overlay is a locked default and cannot be deleted from the editor.' });
+    fs.unlinkSync(filePath);
+    // If this overlay was live, clear the active pointer rather than
+    // leaving gameState.activeId dangling at a URL that now 404s -
+    // /display's #overlayFrame would otherwise keep pointing at a dead
+    // page instead of falling back to the built-in layout.
+    if (gameState.activeKind === 'overlay' && gameState.activeId === req.params.id) {
+      commitGameState(() => { gameState.activeKind = null; gameState.activeId = null; });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Overlay logo layer ──
+// Logos sit in their own array on the overlay, entirely separate from the
+// pasted `html` field - so uploading/moving/removing a logo never touches
+// (or risks mangling) the author's own markup, and the HTML textarea in
+// the editor never needs to round-trip <img> tags it didn't write. Each
+// entry is {id, assetId, x, y, w, h, z} in the same 1920x1080 coordinate
+// space as everything else (gameState, preset elements); assetId points at
+// a file already uploaded via POST /api/logos (same luma-key-safe PNG
+// normalization as the preset editor's logo elements - nothing
+// overlay-specific to redo there).
+// Migrates an overlay saved before versioning existed (flat {html} field,
+// no versions[]/activeVersion) into the current shape on first read, in
+// place on disk - so an overlay created before this change keeps working
+// without a separate manual migration step.
+// Migrates an overlay through each shape this app has used, in place on
+// disk, the first time it's read after an update that changed the shape -
+// so an overlay created at any earlier point keeps working with no
+// separate manual migration step. Each stage is independently
+// idempotent/skippable (checks what's already present before acting), so
+// an overlay already on the latest shape round-trips through this
+// untouched.
+function readOverlayOrNull(id) {
+  const filePath = overlayPath(id);
+  if (!fs.existsSync(filePath)) return null;
+  const overlay = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  let dirty = false;
+
+  if (!Array.isArray(overlay.logos)) { overlay.logos = []; dirty = true; }
+
+  // Stage 1 (oldest shape): no versions[] at all, just a flat top-level
+  // html string - wrap it as version 1 with a single unnamed block.
+  if (!Array.isArray(overlay.versions)) {
+    overlay.versions = [{
+      version: 1,
+      blocks: [{ id: 'block_' + crypto.randomBytes(4).toString('hex'), name: 'Block 1', html: overlay.html || '' }],
+      createdAt: overlay.createdAt || new Date().toISOString(),
+    }];
+    overlay.activeVersion = 1;
+    delete overlay.html;
+    dirty = true;
+  }
+
+  // Stage 2 (single-block-per-version shape, before multi-block support):
+  // each version has a flat `html` string instead of a `blocks` array, and
+  // the overlay has one overlay-level `htmlTransform` instead of
+  // `blockTransforms` keyed by block id. Every version gets wrapped into
+  // the SAME single block id (generated once, reused across all of that
+  // overlay's versions) so rolling back between pre-migration versions
+  // still swaps that one block's content, rather than each version
+  // getting its own disconnected block identity.
+  if (overlay.versions.some(v => typeof v.html === 'string' && !Array.isArray(v.blocks))) {
+    const migratedBlockId = 'block_' + crypto.randomBytes(4).toString('hex');
+    overlay.versions = overlay.versions.map(v => {
+      if (Array.isArray(v.blocks)) return v; // already migrated (shouldn't happen mid-array, but don't double-wrap)
+      return { version: v.version, blocks: [{ id: migratedBlockId, name: 'Block 1', html: v.html || '' }], createdAt: v.createdAt };
+    });
+    overlay.blockTransforms = { [migratedBlockId]: { ...DEFAULT_HTML_TRANSFORM, ...(overlay.htmlTransform || {}) } };
+    delete overlay.htmlTransform;
+    dirty = true;
+  }
+
+  if (!overlay.blockTransforms || typeof overlay.blockTransforms !== 'object') {
+    overlay.blockTransforms = {};
+    dirty = true;
+  }
+  // Any block missing a transform (newly added block, or a gap from a
+  // partial migration) gets a default one, keyed by its own id - z stacks
+  // new blocks above whatever's already there, same convention
+  // POST /logos uses for z-ordering new logos.
+  const activeBlocks = overlayActiveBlocks(overlay);
+  let maxZ = -1;
+  for (const z of Object.values(overlay.blockTransforms)) if (Number.isFinite(z.z)) maxZ = Math.max(maxZ, z.z);
+  for (const l of overlay.logos) if (Number.isFinite(l.z)) maxZ = Math.max(maxZ, l.z);
+  for (const block of activeBlocks) {
+    if (!overlay.blockTransforms[block.id]) {
+      overlay.blockTransforms[block.id] = { ...DEFAULT_HTML_TRANSFORM, z: ++maxZ };
+      dirty = true;
+    }
+  }
+
+  if (dirty) fs.writeFileSync(filePath, JSON.stringify(overlay, null, 2));
+  return overlay;
+}
+
+function writeOverlay(overlay) {
+  overlay.updatedAt = new Date().toISOString();
+  fs.writeFileSync(overlayPath(overlay.id), JSON.stringify(overlay, null, 2));
+  // Logos, the whole-block transform, and active-version changes don't go
+  // through commitGameState/gameUpdate (they're not part of gameState at
+  // all) - so without this, /display's #overlayFrame has no signal that
+  // the overlay it's already showing just changed, and would keep
+  // displaying stale content until something else happens to reassign its
+  // src (switching away and back, or a manual reload). Only broadcast when
+  // the edited overlay IS the one currently live, so routine edits to a
+  // draft/inactive overlay don't cause the live display to reload for no
+  // visible reason.
+  if (gameState.activeKind === 'overlay' && gameState.activeId === overlay.id) {
+    io.emit('overlayContentChanged', { id: overlay.id });
+  }
+}
+
+// Logo transform fields follow DaVinci Resolve's Transform panel convention
+// rather than a top-left x/y/w/h box, since that's the control scheme
+// being matched here: zoomX/zoomY are a percentage of the uploaded image's
+// native size (100 = native), posX/posY are an offset in px from the
+// 1920x1080 canvas's CENTER (not the top-left corner - positive x is
+// right, positive y is down, matching Resolve), and rotation is in
+// degrees. nativeW/nativeH (the uploaded PNG's actual pixel size, from
+// sharp's own metadata at upload time) are stored once and never
+// recomputed, since zoom% is meaningless without them.
+app.post('/api/overlays/:id/logos', express.json(), (req, res) => {
+  if (!isValidOverlayId(req.params.id)) return res.status(400).json({ error: 'Invalid overlay id' });
+  const { assetId, nativeW, nativeH } = req.body || {};
+  if (typeof assetId !== 'string' || !assetId) return res.status(400).json({ error: 'assetId required' });
+  if (!Number.isFinite(nativeW) || !Number.isFinite(nativeH)) return res.status(400).json({ error: 'nativeW/nativeH required' });
+  try {
+    const overlay = readOverlayOrNull(req.params.id);
+    if (!overlay) return res.status(404).json({ error: 'No such overlay' });
+    if (overlay.locked) return res.status(423).json({ error: 'This overlay is a locked default: it is edited programmatically, not from the editor.' });
+    // Default zoom brings a large source image down to a sane on-screen
+    // size (capped at 300px on its longest side) rather than pasting it
+    // in at full native resolution, which for a modern phone photo would
+    // be far larger than the whole 1920x1080 canvas.
+    const maxDim = 300;
+    const defaultZoom = Math.min(100, (maxDim / Math.max(nativeW, nativeH)) * 100);
+    const logo = {
+      id: 'logo_' + crypto.randomBytes(4).toString('hex'),
+      assetId,
+      nativeW, nativeH,
+      zoomX: defaultZoom, zoomY: defaultZoom,
+      posX: 0, posY: 0,
+      rotation: 0,
+      z: overlay.logos.length,
+    };
+    overlay.logos.push(logo);
+    writeOverlay(overlay);
+    res.json(overlay);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Partial update {zoomX, zoomY, posX, posY, rotation, z} - used for
+// drag/resize/rotate/layer-order in the editor. zoomX/zoomY are clamped to
+// a sane positive range; everything else is unclamped (position/rotation
+// can legitimately go off-canvas or past 360, same as Resolve).
+app.put('/api/overlays/:id/logos/:logoId', express.json(), (req, res) => {
+  if (!isValidOverlayId(req.params.id)) return res.status(400).json({ error: 'Invalid overlay id' });
+  try {
+    const overlay = readOverlayOrNull(req.params.id);
+    if (!overlay) return res.status(404).json({ error: 'No such overlay' });
+    if (overlay.locked) return res.status(423).json({ error: 'This overlay is a locked default: it is edited programmatically, not from the editor.' });
+    const logo = overlay.logos.find(l => l.id === req.params.logoId);
+    if (!logo) return res.status(404).json({ error: 'No such logo' });
+    for (const key of ['zoomX', 'zoomY']) {
+      if (Number.isFinite(req.body[key])) logo[key] = Math.max(1, req.body[key]);
+    }
+    for (const key of ['posX', 'posY', 'rotation', 'z']) {
+      if (Number.isFinite(req.body[key])) logo[key] = req.body[key];
+    }
+    writeOverlay(overlay);
+    res.json(overlay);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/overlays/:id/logos/:logoId', (req, res) => {
+  if (!isValidOverlayId(req.params.id)) return res.status(400).json({ error: 'Invalid overlay id' });
+  try {
+    const overlay = readOverlayOrNull(req.params.id);
+    if (!overlay) return res.status(404).json({ error: 'No such overlay' });
+    if (overlay.locked) return res.status(423).json({ error: 'This overlay is a locked default: it is edited programmatically, not from the editor.' });
+    const before = overlay.logos.length;
+    overlay.logos = overlay.logos.filter(l => l.id !== req.params.logoId);
+    if (overlay.logos.length === before) return res.status(404).json({ error: 'No such logo' });
+    writeOverlay(overlay);
+    res.json(overlay);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Overlay HTML/CSS blocks ──
+// An overlay can hold multiple independent HTML/CSS blocks (think "layers"
+// - same mental model as logos), each fully isolated in its own iframe
+// when composited (see GET /overlay/:id and GET /overlay/:id/block/:blockId
+// further down). A block's CONTENT (its html) is versioned - see
+// POST /api/overlays/:id/versions, which snapshots every block together.
+// A block's EXISTENCE (which block ids a given version has) is edited in
+// place on WHICHEVER VERSION THE EDITOR IS CURRENTLY VIEWING (see the
+// ?version= query param below, defaulting to the active version when
+// omitted) - not always the live/active one, since the editor lets you
+// view/edit a version other than the active one (e.g. right after Save,
+// before Set Active), and add/delete needs to affect what you're actually
+// looking at, not silently a different version. A block's TRANSFORM
+// (blockTransforms, keyed by block id) stays overlay-level, not per-
+// version, same as logos - positioning is presentation data independent
+// of content. Renaming a block is metadata-only, also in place.
+
+// Resolves which version a blocks-mutation route should operate on: the
+// one named by ?version=, or the active version if that query param is
+// omitted (keeps any caller that doesn't pass it working against the
+// live version, same as this route's original single-version behavior).
+function resolveTargetVersion(overlay, req) {
+  if (req.query.version) {
+    const v = parseInt(req.query.version, 10);
+    return overlay.versions.find(ver => ver.version === v) || null;
+  }
+  return overlayActiveVersionOf(overlay);
+}
+
+// Adds a new, empty block to the target version, in place (NOT a new
+// version - see the block above for why). Body: { name? }.
+app.post('/api/overlays/:id/blocks', express.json(), (req, res) => {
+  if (!isValidOverlayId(req.params.id)) return res.status(400).json({ error: 'Invalid overlay id' });
+  try {
+    const overlay = readOverlayOrNull(req.params.id);
+    if (!overlay) return res.status(404).json({ error: 'No such overlay' });
+    if (overlay.locked) return res.status(423).json({ error: 'This overlay is a locked default: it is edited programmatically, not from the editor.' });
+    const targetVersion = resolveTargetVersion(overlay, req);
+    if (!targetVersion) return res.status(409).json({ error: 'No such version to add a block to' });
+    if (!Array.isArray(targetVersion.blocks)) targetVersion.blocks = [];
+    const blockId = 'block_' + crypto.randomBytes(4).toString('hex');
+    const name = (req.body.name || '').trim() || ('Block ' + (targetVersion.blocks.length + 1));
+    targetVersion.blocks.push({ id: blockId, name, html: req.body.html || DEFAULT_BLOCK_TEMPLATE });
+    let maxZ = -1;
+    for (const t of Object.values(overlay.blockTransforms)) if (Number.isFinite(t.z)) maxZ = Math.max(maxZ, t.z);
+    for (const l of overlay.logos) if (Number.isFinite(l.z)) maxZ = Math.max(maxZ, l.z);
+    overlay.blockTransforms[blockId] = { ...DEFAULT_HTML_TRANSFORM, z: ++maxZ };
+    writeOverlay(overlay);
+    res.json(overlay);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Renames a block (metadata only - in place, like a logo's fields; does
+// NOT touch its html, which only changes via a versioned Save). Operates
+// on the target version (?version=, default active) same as add/delete.
+app.put('/api/overlays/:id/blocks/:blockId', express.json(), (req, res) => {
+  if (!isValidOverlayId(req.params.id)) return res.status(400).json({ error: 'Invalid overlay id' });
+  try {
+    const overlay = readOverlayOrNull(req.params.id);
+    if (!overlay) return res.status(404).json({ error: 'No such overlay' });
+    if (overlay.locked) return res.status(423).json({ error: 'This overlay is a locked default: it is edited programmatically, not from the editor.' });
+    const targetVersion = resolveTargetVersion(overlay, req);
+    const block = targetVersion && (targetVersion.blocks || []).find(b => b.id === req.params.blockId);
+    if (!block) return res.status(404).json({ error: 'No such block in that version' });
+    if (typeof req.body.name === 'string' && req.body.name.trim()) block.name = req.body.name.trim();
+    writeOverlay(overlay);
+    res.json(overlay);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Removes a block from the target version (?version=, default active), in
+// place, and its transform. Does NOT touch other versions - a block
+// deleted from one version still exists in any version where it was
+// saved, so switching to one of those can bring it back (at which point
+// it'll get a fresh default transform again via readOverlayOrNull's
+// fill-in-the-gaps pass).
+app.delete('/api/overlays/:id/blocks/:blockId', (req, res) => {
+  if (!isValidOverlayId(req.params.id)) return res.status(400).json({ error: 'Invalid overlay id' });
+  try {
+    const overlay = readOverlayOrNull(req.params.id);
+    if (!overlay) return res.status(404).json({ error: 'No such overlay' });
+    if (overlay.locked) return res.status(423).json({ error: 'This overlay is a locked default: it is edited programmatically, not from the editor.' });
+    const targetVersion = resolveTargetVersion(overlay, req);
+    if (!targetVersion || !Array.isArray(targetVersion.blocks)) return res.status(404).json({ error: 'No such block' });
+    const before = targetVersion.blocks.length;
+    targetVersion.blocks = targetVersion.blocks.filter(b => b.id !== req.params.blockId);
+    if (targetVersion.blocks.length === before) return res.status(404).json({ error: 'No such block' });
+    delete overlay.blockTransforms[req.params.blockId];
+    writeOverlay(overlay);
+    res.json(overlay);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// One block's Resolve-style transform (zoomX/zoomY/posX/posY/rotation/z) -
+// same fields and conventions as a logo's, applied to that block's own
+// IFRAME from the outside (see blockStyle() further down) rather than to
+// a shared <body>, now that each block is its own isolated document.
+app.put('/api/overlays/:id/blocks/:blockId/transform', express.json(), (req, res) => {
+  if (!isValidOverlayId(req.params.id)) return res.status(400).json({ error: 'Invalid overlay id' });
+  try {
+    const overlay = readOverlayOrNull(req.params.id);
+    if (!overlay) return res.status(404).json({ error: 'No such overlay' });
+    if (overlay.locked) return res.status(423).json({ error: 'This overlay is a locked default: it is edited programmatically, not from the editor.' });
+    const t = overlay.blockTransforms[req.params.blockId];
+    if (!t) return res.status(404).json({ error: 'No such block' });
+    for (const key of ['zoomX', 'zoomY']) {
+      if (Number.isFinite(req.body[key])) t[key] = Math.max(1, req.body[key]);
+    }
+    for (const key of ['posX', 'posY', 'rotation', 'z']) {
+      if (Number.isFinite(req.body[key])) t[key] = req.body[key];
+    }
+    writeOverlay(overlay);
+    res.json(overlay);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Converts one logo's Resolve-style transform (zoomX/zoomY as a % of
+// native size, posX/posY as an offset from canvas CENTER, rotation in
+// degrees) into an absolutely-positioned, canvas-pixel <img> style. The
+// canvas is always exactly 1920x1080 (the kiosk's own fixed resolution -
+// see docs/kiosk-display.md), so "center" here is literally (960, 540)
+// and these are real on-screen pixels, not percentages - matching how
+// Resolve's own Position values are pixels relative to its frame center,
+// not viewport-relative percentages. left/top target the image's own
+// center (not top-left corner) so rotation happens around the right
+// point; transform-origin is left at the element's center (its CSS
+// default) which is exactly where left/top already placed it.
+function logoStyle(logo) {
+  const w = logo.nativeW * (logo.zoomX / 100);
+  const h = logo.nativeH * (logo.zoomY / 100);
+  const centerX = 960 + logo.posX;
+  const centerY = 540 + logo.posY;
+  const left = centerX - w / 2;
+  const top = centerY - h / 2;
+  return `position:absolute;left:${left}px;top:${top}px;width:${w}px;height:${h}px;` +
+    `transform:rotate(${logo.rotation || 0}deg);z-index:${logo.z ?? 0};`;
+}
+
+const DEFAULT_HTML_TRANSFORM = { zoomX: 100, zoomY: 100, posX: 0, posY: 0, rotation: 0, z: 0 };
+
+// Seeds a new block's own iframe document with the minimum needed to
+// paint something visible and keyable - an empty block would otherwise
+// render as nothing at all, giving no hint there's content to edit.
+const DEFAULT_BLOCK_TEMPLATE = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  body { background: #000; margin: 0; font-family: Arial, sans-serif; }
+  .box { display: inline-flex; gap: 8px; padding: 40px; }
+  .team { background: #222; color: #fff; font-weight: bold; font-size: 24px; padding: 10px 20px; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <div class="team" data-role="teamName" data-side="left">Team 1</div>
+  </div>
+</body>
+</html>
+`;
+
+// Same Resolve-style transform model as logoStyle, applied to a block's
+// own IFRAME element from the outside, rather than to a shared <body>
+// inside a single document - now that every block is fully isolated in
+// its own iframe (see GET /overlay/:id), there's no shared-document CSS
+// to transform; the iframe's own box is what moves/scales/rotates. The
+// iframe's box stays a fixed 1920x1080 (so a block's own CSS/layout
+// behaves identically to viewing it at 100% zoom, regardless of what zoom
+// is actually applied) - zoomX/zoomY are a direct scale on that fixed
+// box, NOT a percentage of some measured "native content size" (a
+// block's own <body> doesn't reliably shrink-wrap to its visible content
+// - see overlay-editor.html's currentHtmlTransform comment for why there
+// was never a reliable "native size" to measure in the first place, back
+// when this was still a per-document transform). 100 = render at face
+// value; 200/50 double/halve everything proportionally from the canvas's
+// own center (960px, 540px), not the block's own.
+function blockIframeStyle(t) {
+  const zoomX = (t.zoomX ?? 100) / 100;
+  const zoomY = (t.zoomY ?? 100) / 100;
+  const centerX = 960 + (t.posX ?? 0);
+  const centerY = 540 + (t.posY ?? 0);
+  // transform-origin is the iframe's own geometric center (50% 50% of ITS
+  // OWN box is correct here, unlike the old body-transform approach - an
+  // iframe element's box is always exactly what we set it to, 1920x1080,
+  // with no equivalent of body's own stretch-to-content-width ambiguity).
+  // left/top place the iframe so that its center sits at the canvas point
+  // (centerX, centerY) BEFORE the scale/rotate transform is applied (the
+  // transform then pivots around that same point via transform-origin).
+  const left = centerX - 1920 / 2;
+  const top = centerY - 1080 / 2;
+  return `position:absolute;left:${left}px;top:${top}px;width:1920px;height:1080px;` +
+    `border:none;transform-origin:50% 50%;transform:scale(${zoomX},${zoomY}) rotate(${t.rotation ?? 0}deg);` +
+    `z-index:${t.z ?? 0};`;
+}
+
+// Injects the live-binding scripts into one block's raw HTML, same
+// pattern the single-block version of this app always used. html,body
+// overflow:hidden prevents this block's own content from ever becoming
+// internally scrollable - content pushed past its own edges would
+// otherwise show a scrollbar, a visible light-colored strip that has
+// nothing to do with the luma-key black background (this bit this app
+// for real once already, back when there was only one block - see
+// docs/scorebug-editor.md's history if curious).
+function injectBlockRuntime(html) {
+  const overflowStyle = `<style>html,body{overflow:hidden !important}</style>`;
+  const scripts = `
+<script src="/socket.io/socket.io.js"></script>
+<script src="/scorebug-render.js"></script>
+<script src="/overlay-bind.js"></script>`;
+  let out = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, scripts + '\n</body>') : html + scripts;
+  out = /<\/head>/i.test(out) ? out.replace(/<\/head>/i, overflowStyle + '\n</head>') : overflowStyle + out;
+  return out;
+}
+
+// Serves ONE block's own document (not the composite) - this is what each
+// block's iframe (in the composite page below) points its src at. Opening
+// this URL directly shows just that one block, full-canvas, at 100% zoom
+// (its transform is applied by the PARENT page styling the iframe, not by
+// this document itself) - useful for debugging one block in isolation.
+app.get('/overlay/:id/block/:blockId', (req, res) => {
+  if (!isValidOverlayId(req.params.id)) return res.status(400).send('Invalid overlay id');
+  try {
+    const overlay = readOverlayOrNull(req.params.id);
+    if (!overlay) return res.status(404).send('No such overlay');
+    const block = overlayActiveBlock(overlay, req.params.blockId);
+    if (!block) return res.status(404).send('No such block');
+    res.set('Content-Type', 'text/html').send(injectBlockRuntime(block.html));
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
+// Serves the COMPOSITE page: one <iframe> per block (each pointed at
+// GET .../block/:blockId, positioned/scaled/rotated per its own
+// blockTransforms entry) plus each logo as an absolutely-positioned
+// <img>, all stacked together by z - so opening THIS URL in OBS/a browser
+// source/the kiosk needs nothing beyond the URL itself, same as before
+// blocks existed. Correct at exactly 1920x1080 (the kiosk's fixed
+// resolution - see docs/kiosk-display.md); this page is not responsive by
+// design, same as every other page in this app.
+app.get('/overlay/:id', (req, res) => {
+  if (!isValidOverlayId(req.params.id)) return res.status(400).send('Invalid overlay id');
+  try {
+    const overlay = readOverlayOrNull(req.params.id);
+    if (!overlay) return res.status(404).send('No such overlay');
+    const blocks = overlayActiveBlocks(overlay);
+    const blockIframes = blocks.map(block => {
+      const t = overlay.blockTransforms[block.id] || DEFAULT_HTML_TRANSFORM;
+      return `<iframe src="/overlay/${overlay.id}/block/${block.id}" style="${blockIframeStyle(t)}"></iframe>`;
+    });
+    const logoImgs = overlay.logos
+      .slice()
+      .sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
+      .map(logo => `<img src="/logos/${logo.assetId}" style="${logoStyle(logo)}">`);
+    const layers = [...blockIframes, ...logoImgs].join('\n');
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>html,body{margin:0;padding:0;background:#000;overflow:hidden;width:1920px;height:1080px}</style>
+</head>
+<body>
+${layers}
+</body>
+</html>`;
+    res.set('Content-Type', 'text/html').send(html);
+  } catch (e) {
+    res.status(500).send(e.message);
   }
 });
 
@@ -959,7 +1662,7 @@ app.post('/api/swap-sides', (req, res) => {
     gameState.rightColor = tempColor;
     gameState.rightScoreTextColor = tempScoreText;
     gameState.sidesSwapped = !gameState.sidesSwapped;
-  }, { skipScoreDiff: true });
+  });
   res.json({ success: true });
 });
 
@@ -1028,8 +1731,7 @@ function loadMatchupByIndex(matchups, idx) {
     gameState.leftScore = 0;
     gameState.rightScore = 0;
     gameState.loadedMatchupIndex = idx;
-    pushFeedEntry('game_start', { leftTeam: gameState.leftTeam, rightTeam: gameState.rightTeam });
-  }, { skipScoreDiff: true });
+  });
 }
 
 // Next/Prev Game always walks bracket.json — whether its matchups were
@@ -1049,8 +1751,28 @@ function navigateGame(direction) {
   return { ok: true, index: nextIdx };
 }
 
+// Deferred-start signal: the first time the /display page connects, the
+// overlay is really on screen, so tell systemd the kiosk is up.
+// scoreboard-kiosk-up.path starts scoreboard-deferred.target (Companion,
+// keypad bridge) on this file; it is on tmpfs and gone after a reboot.
+// scoreboard-deferred-fallback.timer covers the case where the display
+// never connects. See docs/kiosk-display.md, "Boot ordering".
+const KIOSK_UP_FILE = path.join(process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid()}`, 'scoreboard-kiosk-up');
+let kioskUpSignalled = false;
+function signalKioskUp(socket) {
+  if (kioskUpSignalled) return;
+  const referer = socket.handshake?.headers?.referer || '';
+  if (!/\/display(\?|$)/.test(referer)) return;
+  kioskUpSignalled = true;
+  fs.writeFile(KIOSK_UP_FILE, new Date().toISOString() + '\n', (err) => {
+    if (err) console.error('kiosk-up signal failed:', err.message);
+    else console.log('Display connected: kiosk-up signalled for deferred services');
+  });
+}
+
 io.on('connection', (socket) => {
   console.log('Client connected');
+  signalKioskUp(socket);
   
   socket.on('error', (error) => {
     console.error('Socket error:', error);
@@ -1122,14 +1844,14 @@ io.on('connection', (socket) => {
       gameState.rightColor = tempColor;
       gameState.rightScoreTextColor = tempScoreText;
       gameState.sidesSwapped = !gameState.sidesSwapped;
-    }, { skipScoreDiff: true });
+    });
   });
 
   socket.on('resetGame', () => {
     commitGameState(() => {
       gameState.leftScore = 0;
       gameState.rightScore = 0;
-    }, { skipScoreDiff: true });
+    });
   });
 
   socket.on('navigateMatchup', (data) => {
@@ -1145,17 +1867,35 @@ io.on('connection', (socket) => {
       gameState.leftScore  = 0;
       gameState.rightScore = 0;
       gameState.loadedMatchupIndex = data.matchupIndex ?? null;
-      pushFeedEntry('game_start', { leftTeam: gameState.leftTeam, rightTeam: gameState.rightTeam });
-    }, { skipScoreDiff: true });
+    });
   });
 
-  // Instant cut, by design: setting activePresetId goes through the same
-  // commitGameState -> saveGameState -> io.emit('gameUpdate') pipeline as
-  // everything else, so display.html's next full-state render just swaps
-  // its whole layout. No separate transition/animation mechanism.
-  socket.on('setActivePreset', (data) => {
+  // Instant cut, by design: setting activeKind/activeId goes through the
+  // same commitGameState -> saveGameState -> io.emit('gameUpdate')
+  // pipeline as everything else, so display.html's next full-state render
+  // just swaps its whole layout. No separate transition/animation
+  // mechanism. data.kind is 'preset' | 'overlay'; an empty/missing id (or
+  // kind) clears back to /display's built-in fallback.
+  socket.on('setActive', (data) => {
     commitGameState(() => {
-      gameState.activePresetId = data.presetId || null;
+      gameState.activeId = data.id || null;
+      gameState.activeKind = gameState.activeId ? (data.kind || 'preset') : null;
+    });
+  });
+
+  // Asks every open display page (the kiosk) to reload itself in place -
+  // picks up overlay HTML/CSS or display code changes without restarting
+  // Chromium, which would drop to the bare desktop on stream. display.html
+  // handles it the same way it handles a server restart (solid black page
+  // background, so no flash).
+  socket.on('reloadDisplay', () => {
+    console.log('Display reload requested from control');
+    io.emit('reloadDisplay');
+  });
+
+  socket.on('setDebugOverlay', (data) => {
+    commitGameState(() => {
+      gameState.debugOverlay = !!data.enabled;
     });
   });
 

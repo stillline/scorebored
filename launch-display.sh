@@ -98,9 +98,10 @@ ts "removing cover (pid $COVER_PID)"
 kill "$COVER_PID" 2>/dev/null || true
 rm -f /tmp/cover-window.pid
 
-# Tell systemd the overlay is on screen: scoreboard-kiosk-up.path starts the
-# deferred services (Companion, keypad bridge) on this file.
-touch "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/scoreboard-kiosk-up"
+# The kiosk-up signal for the deferred services (Companion, keypad bridge) is
+# written by server.js when the /display page actually connects, not here:
+# a fixed delay after launching Chromium fired while Chromium was still
+# loading and the deferred services competed with it for the SD card.
 
 # Restart automatically if Chromium exits
 wait "$CHROMIUM_PID"

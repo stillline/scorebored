@@ -63,7 +63,8 @@ Sequence:
 6. After a fixed 4 s, kills the black cover (by the PID it started; a pid
    file was used before and lost a race on slow boots, leaving the cover on
    top of the overlay).
-7. Touches `$XDG_RUNTIME_DIR/scoreboard-kiosk-up`, which
+7. When the `/display` page first connects to the server, `server.js`
+   writes `$XDG_RUNTIME_DIR/scoreboard-kiosk-up`, which
    `scoreboard-kiosk-up.path` turns into a start of
    `scoreboard-deferred.target`: Companion and the keypad bridge. See
    "Boot ordering" below.
@@ -99,7 +100,7 @@ Mitigations in place:
   disabled: neither does anything useful on this rig.
 - Companion and the keypad bridge no longer start from `multi-user.target`.
   `scoreboard-deferred.target` wants both and is started either by
-  `scoreboard-kiosk-up.path` when the launcher reports the overlay up, or
+  `scoreboard-kiosk-up.path` when the display page first connects to the server, or
   by `scoreboard-deferred-fallback.timer` 180 s after boot, whichever is
   first. If the kiosk never comes up, Companion still starts.
 
