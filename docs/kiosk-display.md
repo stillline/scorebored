@@ -85,7 +85,7 @@ proper fix is in the migration plan.
 deploy (`systemctl restart scorebored`) reaches the kiosk without
 restarting Chromium.
 
-## Boot ordering (why the overlay took two minutes)
+## Boot ordering (resolved 2026-10-12: overlay at ~104 s, was 130 to 153 s)
 
 Measured 2026-10-12 with labwc's debug log: nothing waits on anything, but
 on a cold boot every disk-heavy step runs ten to twenty times slower than
@@ -104,7 +104,16 @@ Mitigations in place:
   by `scoreboard-deferred-fallback.timer` 180 s after boot, whichever is
   first. If the kiosk never comes up, Companion still starts.
 
-The real fix is faster storage (NVMe); see the migration plan.
+- `scorebored.service` is ordered after `NetworkManager.service`, not
+  `network-online.target`, which waits for every auto-connect profile (a
+  slow home Wi-Fi association once held the server to 71 s).
+
+Measured after these changes: server ready and ATEM connected at ~53 s,
+overlay on screen at ~104 s from power-on. The remaining ~40 s is
+Chromium's own cold start from the SD card. Closed as solved for the
+2026 tournament; further gains (SSD root, launching Chromium on a local
+holding page in parallel with the server) are post-tournament items in
+the migration plan.
 
 ## Reliability and crash capture
 
