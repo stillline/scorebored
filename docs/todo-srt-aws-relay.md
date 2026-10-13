@@ -1,8 +1,18 @@
 # TODO: SRT relay through AWS (not started, to be discussed first)
 
-Status: parked 2026-10-12. The owner wants to discuss this before any of it
-is built. Nothing below is implemented. The plan text is the owner's,
-copied here so it is not lost; notes from the current rig follow it.
+Status: the cloud relay was built separately by the owner (MediaMTX on AWS,
+`srt://54.190.49.121:8890`, UI at https://relay.onlygoals.tv). The Pi side
+was built 2026-10-13 **differently from the plan below**: nginx-rtmp stays,
+and an `exec_push` runs `/usr/local/bin/srt-push` (ffmpeg, codecs copied) to
+the relay. See `network.md`, section "SRT relay to the cloud". The plan text
+below is the owner's original, kept for the cloud-side details and the
+acceptance tests; notes from the rig follow it.
+
+Pi-side contract the build was done against (summary): never stall the
+ATEM → Pi push; keep nginx and port 1935; retry forever; no re-encoding;
+passphrase never printed, logged, committed or world-readable; caller is
+the Pi, UDP 8890 outbound; stream id `publish:live`; MPEG-TS payload;
+latency 2000000 µs to start; pkt_size 1316; one publisher at a time.
 
 Notes against the rig as of 2026-10-12:
 

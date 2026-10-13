@@ -11,6 +11,7 @@ const { exec } = require('child_process');
 const { SyncManager } = require('./lib/sync');
 const { startSpeedifyStats, registerSpeedifySocketHandlers } = require('./lib/speedify');
 const { registerRtmpSocketHandlers } = require('./lib/rtmp');
+const { registerSrtSocketHandlers } = require('./lib/srt');
 const { createAtemControl } = require('./lib/atem');
 const { registerNetworkSocketHandlers } = require('./lib/network');
 
@@ -2237,6 +2238,7 @@ io.on('connection', (socket) => {
 
   registerNetworkSocketHandlers(socket);
   registerRtmpSocketHandlers(socket);
+  registerSrtSocketHandlers(socket);
 });
 
 const speedify = startSpeedifyStats(io);

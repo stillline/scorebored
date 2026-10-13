@@ -79,7 +79,17 @@
         </div>
 
         <div class="sec">
-            <div class="sec-hdr">RTMP Relay</div>
+            <div class="sec-hdr">Stream Output <span class="badge bx" id="modeBadge">--</span></div>
+            <div style="font-size:11px;color:#666;margin-bottom:6px">One output at a time. Switching restarts nginx: the ATEM reconnects by itself, with a short gap on air.</div>
+            <div class="btn-row">
+                <button class="btn btn-g" id="modeBtnSrt" onclick="setRelayMode('srt')">Cloud relay (SRT)</button>
+                <button class="btn btn-g" id="modeBtnRtmp" onclick="setRelayMode('rtmp')">Direct push (YouTube)</button>
+            </div>
+            <div class="sb" id="modeStatus" style="display:none"></div>
+        </div>
+
+        <div class="sec">
+            <div class="sec-hdr">RTMP Relay <span class="badge bx" id="rtmpModeBadge">--</span></div>
             <div id="rtmpDisplay" style="font-size:11px;color:#666;margin-bottom:6px"><span class="spinner"></span>Loading...</div>
             <label style="font-size:11px;color:#666;display:block;margin-bottom:2px">Base URL</label>
             <input type="text" id="rtmpBaseUrl" placeholder="rtmp://example.com/live" style="width:100%;padding:5px 7px;border-radius:4px;border:1px solid #444;background:#333;color:white;font-size:13px;margin-bottom:4px">
@@ -92,6 +102,19 @@
             </div>
             <div class="sb" id="rtmpStatus" style="display:none"></div>
             <div id="rtmpPresets" style="margin-top:6px"></div>
+        </div>
+
+        <div class="sec">
+            <div class="sec-hdr">SRT Relay (cloud) <span class="badge bx" id="srtModeBadge">--</span> <span class="badge bx" id="srtPushBadge">--</span></div>
+            <div id="srtDisplay" style="font-size:11px;color:#666;margin-bottom:6px"><span class="spinner"></span>Loading...</div>
+            <label style="font-size:11px;color:#666;display:block;margin-bottom:2px">Passphrase (32 hex chars, never shown back)</label>
+            <input type="password" id="srtPassphrase" placeholder="paste passphrase" autocomplete="off" style="width:100%;padding:5px 7px;border-radius:4px;border:1px solid #444;background:#333;color:white;font-size:13px;margin-bottom:6px">
+            <div class="btn-row">
+                <button class="btn btn-p" onclick="applySrtPassphrase()">Set Passphrase</button>
+                <button class="btn btn-g" onclick="loadSrtStatus()">Refresh</button>
+            </div>
+            <div class="sb" id="srtStatus" style="display:none"></div>
+            <pre id="srtLog" style="font-size:10px;color:#888;background:#1a1a1a;padding:4px 6px;border-radius:3px;margin-top:6px;white-space:pre-wrap;word-break:break-all;max-height:120px;overflow:auto;display:none"></pre>
         </div>
 
         <div class="sec">
@@ -164,7 +187,7 @@
         let lastStreamingStats = null, lastSessionStats = null, speedifyInfoLoaded = false;
 
         const statusBar = document.getElementById('socketStatus');
-        socket.on('connect', () => { statusBar.textContent = 'Connected'; statusBar.className = 'sb ok'; loadInterfaces(); loadRtmpDest(); renderRtmpPresets(); loadIphones(); if (!speedifyInfoLoaded) { loadSpeedifyInfo(); speedifyInfoLoaded = true; } });
+        socket.on('connect', () => { statusBar.textContent = 'Connected'; statusBar.className = 'sb ok'; loadInterfaces(); loadRtmpDest(); renderRtmpPresets(); loadSrtStatus(); loadIphones(); if (!speedifyInfoLoaded) { loadSpeedifyInfo(); speedifyInfoLoaded = true; } });
         socket.on('disconnect', () => { statusBar.textContent = 'Disconnected'; statusBar.className = 'sb err'; });
 
         socket.on('speedifyStats', (data) => {
@@ -462,6 +485,72 @@
                     st.className = 'sb ok';
                     st.textContent = 'Updated. nginx reloaded.';
                     loadRtmpDest();
+                }
+            });
+        }
+
+        function renderRelayMode(mode) {
+            const srt = mode === 'srt', rtmp = mode === 'rtmp';
+            const mb = document.getElementById('modeBadge');
+            mb.textContent = srt ? 'CLOUD RELAY' : rtmp ? 'DIRECT PUSH' : 'UNKNOWN';
+            mb.className = 'badge ' + (srt || rtmp ? 'bg' : 'br');
+            document.getElementById('modeBtnSrt').className = 'btn ' + (srt ? 'btn-p' : 'btn-g');
+            document.getElementById('modeBtnRtmp').className = 'btn ' + (rtmp ? 'btn-p' : 'btn-g');
+            const sb = document.getElementById('srtModeBadge'), rb = document.getElementById('rtmpModeBadge');
+            sb.textContent = srt ? 'ACTIVE' : 'STANDBY'; sb.className = 'badge ' + (srt ? 'bg' : 'bx');
+            rb.textContent = rtmp ? 'ACTIVE' : 'STANDBY'; rb.className = 'badge ' + (rtmp ? 'bg' : 'bx');
+        }
+
+        function setRelayMode(mode) {
+            const st = document.getElementById('modeStatus');
+            st.style.display = '';
+            st.className = 'sb';
+            st.innerHTML = '<span class="spinner"></span>Switching, restarting nginx...';
+            socket.emit('setRelayMode', { mode }, (res) => {
+                if (res.error) {
+                    st.className = 'sb err';
+                    st.textContent = 'Error: ' + res.error;
+                } else {
+                    st.className = 'sb ok';
+                    st.textContent = 'Switched. nginx restarted; the ATEM reconnects in a few seconds.';
+                    loadSrtStatus();
+                }
+            });
+        }
+
+        function loadSrtStatus() {
+            const disp = document.getElementById('srtDisplay');
+            const badge = document.getElementById('srtPushBadge');
+            const logEl = document.getElementById('srtLog');
+            socket.emit('getSrtRelayStatus', (res) => {
+                if (res.error) { disp.textContent = 'Error: ' + res.error; return; }
+                renderRelayMode(res.mode);
+                disp.innerHTML = '<span style="color:#ccc">' + esc(res.relay) + '</span><br>' +
+                    (res.passphraseSet
+                        ? '<span style="color:#8bc34a">Passphrase set</span>'
+                        : '<span style="color:#ff9800">No passphrase: push disabled until one is set</span>');
+                badge.textContent = res.pushRunning ? 'PUSHING' : 'IDLE';
+                badge.className = 'badge ' + (res.pushRunning ? 'bg' : 'bx');
+                if (res.log && res.log.length) { logEl.style.display = ''; logEl.textContent = res.log.join('\n'); logEl.scrollTop = logEl.scrollHeight; }
+                else logEl.style.display = 'none';
+            });
+        }
+
+        function applySrtPassphrase() {
+            const input = document.getElementById('srtPassphrase');
+            const st = document.getElementById('srtStatus');
+            st.style.display = '';
+            st.className = 'sb';
+            st.innerHTML = '<span class="spinner"></span>Saving...';
+            socket.emit('setSrtPassphrase', { passphrase: input.value }, (res) => {
+                input.value = '';
+                if (res.error) {
+                    st.className = 'sb err';
+                    st.textContent = 'Error: ' + res.error;
+                } else {
+                    st.className = 'sb ok';
+                    st.textContent = res.restarted ? 'Saved. Running push restarted with the new passphrase.' : 'Saved.';
+                    loadSrtStatus();
                 }
             });
         }

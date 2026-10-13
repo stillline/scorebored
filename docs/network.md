@@ -43,7 +43,9 @@ lives in `/etc/nginx/rtmp-push.conf` (root-only, mode 600, included from
 the `application live` block in `nginx.conf`) so the YouTube stream key is
 not in a world-readable file.
 
-The network page reads and changes that line. Saving a new destination
+This output is active only when the Stream Output switch (below) is on
+Direct push; otherwise it stands by. The network page reads and changes
+that line. Saving a new destination
 writes the file, runs `nginx -t` (rolling back if nginx rejects it) and
 **restarts** nginx, because a reload only applies to new sessions and the
 point is to switch the session that is on air. The ATEM reconnects by
@@ -65,6 +67,91 @@ Historical note: until 2026-10-12 this editor changed `STREAM_URL` in
 been dormant since April (its service is disabled and nginx has no
 `record` directive). That script still exists but is not used by the
 relay.
+
+## SRT relay to the cloud (`lib/srt.js`, `/usr/local/bin/srt-push`)
+
+The second output, for the chain ATEM → Pi → SRT → cloud relay (AWS,
+`srt://54.190.49.121:8890`, `relay.onlygoals.tv`) → YouTube/Twitch. The relay
+decides where the stream goes; the Pi only ever sends to the relay. Added
+2026-10-13; the relay side is built and running separately (see
+`todo-srt-aws-relay.md` for the plan and the Pi-side contract it was built
+against). Verified the same day: test pattern ONLINE on the relay at 4 Mbps,
+about 2 % uplink loss fully recovered by SRT, relayed on to YouTube.
+
+### One output at a time: the Stream Output switch
+
+nginx's `application live` includes exactly one output file,
+`/etc/nginx/rtmp-active.conf`, which is a symlink to either `rtmp-srt.conf`
+(cloud relay, the default) or `rtmp-push.conf` (direct YouTube push). The
+**Stream Output** box at the top of `/network` switches it: `lib/srt.js`
+repoints the symlink, runs `nginx -t` (rolling back on failure) and
+**restarts** nginx so the switch applies to the session on air; the ATEM
+reconnects by itself after a short gap. Both boxes below show ACTIVE or
+STANDBY. The two files are never edited by the switch, so the YouTube key
+and the SRT settings survive flipping back and forth.
+
+When to fall back to the direct push: the relay is down or unreachable, you
+cannot reach the relay UI to set a target, or Speedify is off and the venue
+blocks outbound UDP. Do not fall back for uplink trouble (loss, stalls):
+that is where the relay helps, and the direct TCP push would fare worse.
+Running both at once was the bring-up configuration and is no longer
+possible without editing `nginx.conf`; it doubles uplink load.
+
+How the SRT push works:
+
+- `/etc/nginx/rtmp-srt.conf` holds one line:
+  `exec_push /usr/local/bin/srt-push $name;`. nginx runs it when the ATEM
+  starts publishing, kills it when the publish ends, and respawns it 5 s
+  after it exits for any other reason (nginx-rtmp's default `respawn on`).
+  That is the retry-forever behaviour: uplink drop, relay restart or wrong
+  passphrase all end in a 5 s respawn loop until the cause clears.
+- `srt-push` pulls the stream back from nginx (`rtmp://127.0.0.1/live/$name`)
+  and runs `ffmpeg -c copy -f mpegts` to the relay with
+  `streamid=publish:live`, `latency=2000000` (microseconds, 2 s) and
+  `pkt_size=1316`. The ATEM only talks to nginx, so this never
+  back-pressures it.
+- **nginx runs `worker_processes 1`**, and that is load-bearing. nginx-rtmp
+  keeps a live stream inside the worker that accepted the publisher and does
+  not share it between workers. With the default `auto` (4 workers on the
+  Pi 5) the push script's pull landed on a random worker and only 1 in 4
+  attempts received media; the others sat with no data, hit the script's
+  10 s `-rw_timeout`, died and respawned, so the relay saw the feed only
+  after a lucky attempt (0 to 60+ s). Found 2026-10-13 with the real ATEM.
+  The same limitation makes the `/stat` page per-worker; with one worker it
+  is accurate. The alternative is `rtmp_auto_push on`, not used.
+- exec_push runs as the nginx worker user (www-data). The passphrase is in
+  `/etc/srt-relay/passphrase`, root:www-data mode 640, read at start. It is
+  set from the **SRT Relay (cloud)** box on `/network`: paste it in, Set
+  Passphrase. The server validates 32 hex characters, writes the file via
+  sudo, and kills a running push so it respawns with the new value. The
+  value is never sent back to the browser, logged, or shown. Note the page
+  is plain HTTP on `switcher_net`; set the passphrase from a device on that
+  LAN, not through a shared network.
+- ffmpeg prints the full output URL, passphrase included, when a connection
+  fails, so `srt-push` pipes stderr through `sed` to replace it with
+  `REDACTED` before it reaches journald (`journalctl -t srt-push`). The
+  `/network` box shows the last few of those lines and a PUSHING/IDLE badge
+  (`pgrep` for the ffmpeg).
+- Known exposure: the passphrase is on ffmpeg's command line, so any local
+  user can read it from `ps` while a push runs. The fix would be mounting
+  `/proc` with `hidepid=2`, which is a system-wide change and has not been
+  done.
+
+Checks:
+
+- `journalctl -t srt-push -f` while the ATEM (or a test pattern into
+  `rtmp://127.0.0.1/live/anything`) is publishing. A wrong passphrase shows
+  `Connection to srt://… failed: Input/output error` 3 s after each
+  `starting push` line; a right one shows only the `starting push` line and
+  the relay's Live page goes ONLINE.
+- Dropout test from the contract:
+  `sudo iptables -I OUTPUT -p udp --dport 8890 -j DROP`, wait ~20 s,
+  `sudo iptables -D OUTPUT -p udp --dport 8890 -j DROP`. The local publish
+  keeps running; the relay comes back ONLINE on its own.
+
+Rollback: switch to Direct push on `/network` (or
+`ln -sfn rtmp-push.conf /etc/nginx/rtmp-active.conf && systemctl restart nginx`).
+The YouTube push, the ATEM path and the control pages are untouched.
 
 ## Uplink topology and bonding
 
