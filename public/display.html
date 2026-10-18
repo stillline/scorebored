@@ -37,6 +37,10 @@ body{font-family:var(--face)}
    outer element's own (irrelevant here) overflow, kept hidden for
    consistency with every other canvas-sized element on this page. */
 #overlayFrame{position:absolute;top:0;left:0;width:1920px;height:1080px;border:none;overflow:hidden;display:none}
+/* Bracket ladder layer (gameState.ladder, setLadder): /ladder?bare=1 on a black
+   background, so the ATEM's luma key shows the bracket over the program.
+   Above the scorebug overlay, below the commercial break. */
+#ladderFrame{position:absolute;top:0;left:0;width:1920px;height:1080px;border:none;overflow:hidden;display:none;z-index:5;background:#000}
 /* #presetLayer is what renderPreset() tears down and rebuilds on every
    render - kept as a dedicated child of #stage, a sibling of
    #overlayFrame, specifically so renderPreset's own "wipe every child of
@@ -106,6 +110,7 @@ body{font-family:var(--face)}
 <div id="stage">
   <div id="presetLayer"></div>
   <iframe id="overlayFrame" scrolling="no"></iframe>
+  <iframe id="ladderFrame" scrolling="no"></iframe>
 </div>
 
 <!-- Commercial Break Video Overlay -->
@@ -251,6 +256,19 @@ let renderGeneration = 0;
 
 let shownOverlayId = null; // which overlay (if any) #overlayFrame currently points at - avoids an unnecessary reload on every gameUpdate when nothing about the active overlay changed
 
+// Bracket ladder layer: shown when gameState.ladder.active; .src only
+// reassigned when the tournament changes so the page's own refresh loop is
+// not restarted on every gameUpdate.
+const ladderFrameEl = document.getElementById('ladderFrame');
+let shownLadderSrc = null;
+function renderLadderLayer(ladder){
+  const active = !!(ladder && ladder.active);
+  if (!active) { ladderFrameEl.style.display = 'none'; return; }
+  const src = '/ladder?bare=1' + (ladder.tournament ? '&t=' + encodeURIComponent(ladder.tournament) : '');
+  if (src !== shownLadderSrc) { ladderFrameEl.src = src; shownLadderSrc = src; }
+  ladderFrameEl.style.display = 'block';
+}
+
 async function renderDisplay(gameState){
   console.log('Updating display with gameState:', gameState);
 
@@ -272,6 +290,8 @@ async function renderDisplay(gameState){
       stopCommercialBreak(false);
     }
   }
+
+  renderLadderLayer(gameState.ladder);
 
   // Anchor the clock to THIS device's receipt time, not a timestamp from
   // the Pi - see scorebug-render.js's clock-interpolation comment. This

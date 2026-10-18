@@ -74,6 +74,7 @@ const defaultGameState = {
   // since it's plain readable text sitting over the live HDMI output, not
   // something to leave on for a real broadcast. See setDebugOverlay.
   debugOverlay: false,
+  ladder: { active: false, tournament: null }, // bracket ladder layer on /display (setLadder); tournament uuid or null = the sync's
   commercialBreak: {
     active: false,
     videoPath: '',
@@ -509,6 +510,66 @@ app.get('/network', (req, res) => {
 
 app.get('/apchannel', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'apchannel.html'));
+});
+
+// Bracket ladder for any pasted shufflepolo.com tournament link, independent
+// of the tournament the sync follows. Renders the public page headless (see
+// shufflepolo_sync/page_bracket.js), cached per tournament for LADDER_TTL_MS;
+// concurrent requests for the same tournament share one render. Only
+// shufflepolo.com/t/<uuid> is ever rendered.
+const pageBracket = require('./shufflepolo_sync/page_bracket');
+const LADDER_TTL_MS = 120000;
+const ladderCache = new Map(); // tournament id -> { at, data, pending }
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+// "Next up" card: live[] / up_next[] from the scoreboard feed (same endpoint
+// the sync polls), cached briefly so the ladder's 30 s reload stays cheap.
+const LADDER_FEED_URL = process.env.SHUFFLEPOLO_FEED_URL || 'https://xavxyvnrtqccnyonlfeu.supabase.co/functions/v1/scoreboard-feed';
+const LADDER_FEED_TTL_MS = 15000;
+const ladderFeedCache = new Map(); // tournament id -> { at, data }
+async function ladderFeed(id) {
+  const c = ladderFeedCache.get(id);
+  if (c && Date.now() - c.at < LADDER_FEED_TTL_MS) return c.data;
+  try {
+    const r = await fetch(`${LADDER_FEED_URL}?tournament=${id}`, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error(`feed HTTP ${r.status}`);
+    const b = await r.json();
+    const data = { live: b.live || [], suspended: b.suspended || [], up_next: b.up_next || [], time_zone: b.tournament && b.tournament.time_zone, server_now: b.server_now };
+    ladderFeedCache.set(id, { at: Date.now(), data });
+    return data;
+  } catch (e) {
+    return c ? c.data : { live: [], suspended: [], up_next: [], feed_error: e.message };
+  }
+}
+
+app.get('/api/ladder', async (req, res) => {
+  const m = UUID_RE.exec(String(req.query.t || ''));
+  if (!m) return res.status(400).json({ error: 'pass a shufflepolo.com/t/<uuid> link or the uuid as ?t=' });
+  const id = m[0].toLowerCase();
+  const url = `https://shufflepolo.com/t/${id}`;
+  const entry = ladderCache.get(id);
+  const now = Date.now();
+  const feed = await ladderFeed(id);
+  const send = (data) => res.json({ ...data, ...feed });
+  if (entry && entry.data && now - entry.at < LADDER_TTL_MS) return send(entry.data);
+  if (entry && entry.pending) return entry.pending.then(send, (e) => res.status(502).json({ error: e.message }));
+  const pending = pageBracket.readBracketPage(url).then((page) => {
+    const data = {
+      tournament: { id, name: page.title, url },
+      page_games: page.games,
+      teams: page.teams,
+      page_read_at: new Date().toISOString(),
+    };
+    // keep the previous games if this render came back empty (page glitch)
+    if (page.games.length === 0 && entry && entry.data && entry.data.page_games.length) data.page_games = entry.data.page_games;
+    ladderCache.set(id, { at: Date.now(), data, pending: null });
+    return data;
+  }).catch((e) => { ladderCache.set(id, { at: 0, data: entry && entry.data, pending: null }); throw e; });
+  ladderCache.set(id, { at: entry ? entry.at : 0, data: entry && entry.data, pending });
+  pending.then(send, (e) => res.status(502).json({ error: e.message }));
+});
+
+app.get('/ladder', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'bracket-ladder.html'));
 });
 
 app.get('/bracket', (req, res) => {
@@ -1898,6 +1959,18 @@ io.on('connection', (socket) => {
     commitGameState(() => {
       gameState.debugOverlay = !!data.enabled;
     });
+  });
+
+  // Bracket ladder as a full-frame layer on /display, over the scorebug and
+  // under a commercial break. The ladder page is luma-keyed by the ATEM like
+  // everything else on the display output (black background), so turning it
+  // on shows the bracket over the program. From the /ladder page's button.
+  socket.on('setLadder', (data) => {
+    const m = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(String((data && data.tournament) || ''));
+    commitGameState(() => {
+      gameState.ladder = { active: !!(data && data.active), tournament: m ? m[0].toLowerCase() : null };
+    });
+    console.log(`Ladder layer ${gameState.ladder.active ? 'ON' : 'off'}${gameState.ladder.tournament ? ' for ' + gameState.ladder.tournament : ''}`);
   });
 
   socket.on('startCommercialBreak', async (data) => {

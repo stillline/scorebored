@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bracket Ladder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/*
+ * Bracket ladder, drawn like shufflepolo.com's bracket page but in the colours
+ * of the on-air scorebug (overlay NAHBPC_2026_2: navy / periwinkle / ice / ink,
+ * Chakra Petch). Data: GET /api/sync/shufflepolo/bracket -> page_games[], the
+ * game cards read from the tournament page by shufflepolo_sync/page_bracket.js,
+ * each with its grid placement (row / rowEnd / column), so cards land where
+ * the page puts them and the connectors follow from row overlap.
+ *
+ * ?t=<link or uuid>  any shufflepolo.com tournament, rendered by the server
+ *             (/api/ladder); without it, the tournament the sync follows.
+ *             The paste box at the top sets it.
+ * ?bare=1     hide the paste box (for an on-air window). In bare mode the
+ *             page cycles bracket / teams every ?cycle= seconds (default 30;
+ *             cycle=0 to pin the bracket). ?view=teams starts on the teams
+ *             list.
+ * ?src=<url>  load the JSON from elsewhere (same-origin, or file:// when
+ *             Chromium runs with --allow-file-access-from-files) for previews.
+ * ?scale=<n>  override the auto fit-to-width scale.
+ */
+:root {
+  --navy-deep: #34406e;
+  --navy:      #4a5a8f;
+  --periwinkle:#8794c4;
+  --mist:      #bcc5e3;
+  --ice:       #eef1f9;
+  --ink:       #3a3a3a;
+  --bg:        #000000;      /* pure black: the ATEM luma-keys it out when this page is a display layer */
+  --font:      'Chakra Petch', 'Arial Narrow', Arial, sans-serif;
+  --card-w: 300px;
+  --col-gap: 52px;           /* room for the connectors */
+  --row-h: 92px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ice); font-family: var(--font); }
+body { padding: 28px 40px; min-height: 100vh; }
+#root { transform-origin: top left; }
+/* Text that is not on a card sits on the keyed-out black, i.e. over the program video,
+   so it gets a navy chip behind it. */
+.chip, h1, .section-title, .round-label { display: inline-block; background: var(--navy-deep); border-radius: 6px; }
+h1 { font-size: 30px; font-weight: 700; margin: 0; letter-spacing: .02em; color: var(--ice); padding: 4px 14px 5px; }
+h1 small { font-size: 16px; font-weight: 500; color: var(--mist); margin-left: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.section { margin: 14px 0 6px; }
+.section-title { font-size: 15px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--mist); margin: 0 0 6px; padding: 3px 10px; }
+.ladder { position: relative; display: grid; column-gap: var(--col-gap); row-gap: 0; }
+.ladder.centered { justify-content: center; }
+.round-label { grid-row: 1; align-self: end; justify-self: start; font-size: 13px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--mist); padding: 2px 8px; margin-bottom: 5px; }
+.card { align-self: center; width: var(--card-w); background: var(--ice); color: var(--navy-deep); border: 2px solid var(--periwinkle); border-radius: 8px; overflow: hidden; }
+.card .head { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--navy); padding: 3px 10px 0; }
+.card .team { display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 20px; font-weight: 600; line-height: 1.25; }
+.card .team:last-child { padding-bottom: 4px; }
+.card .team .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .team .score { font-weight: 700; min-width: 32px; text-align: center; margin-left: 10px; background: var(--navy); color: #fff; border-radius: 4px; padding: 0 6px; }
+.card .team.tbd .name { color: var(--periwinkle); font-weight: 500; }
+.card .team.winner { color: var(--navy-deep); font-weight: 700; }
+.card .team.winner .score { background: var(--navy-deep); }
+.card .team.loser { color: var(--navy); }
+.card .team.loser .score { background: var(--periwinkle); color: var(--ice); }
+.card .team.live .score { background: #c2184f; }
+svg.connectors { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+svg.connectors path { fill: none; stroke: var(--periwinkle); stroke-width: 2px; }
+#bar { display: flex; gap: 8px; align-items: center; margin: 0 0 14px; }
+#bar input { flex: 1; max-width: 640px; padding: 7px 10px; font: 500 14px var(--font); color: var(--navy-deep); background: var(--ice); border: 2px solid var(--periwinkle); border-radius: 6px; outline: none; }
+#bar input::placeholder { color: var(--periwinkle); }
+#bar button { padding: 7px 14px; font: 700 13px var(--font); letter-spacing: .08em; text-transform: uppercase; color: #fff; background: var(--navy); border: 2px solid var(--periwinkle); border-radius: 6px; cursor: pointer; }
+#bar .hint { font-size: 12px; color: var(--periwinkle); }
+#bar #stream { margin-left: auto; background: var(--navy-deep); }
+#bar #stream.on { background: #c2184f; border-color: #ff8a8a; }
+body.bare #bar, body.bare #status { display: none; } /* on air: nothing but the bracket over black */
+#bar .views { display: flex; gap: 4px; }
+#bar .views button.sel { background: var(--periwinkle); color: var(--navy-deep); }
+#teams { display: none; }
+#teams.show { display: block; }
+#root.teams-mode #sections { display: none; }
+.team-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; max-width: 1840px; }
+.team { background: var(--ice); color: var(--navy-deep); border: 2px solid var(--periwinkle); border-radius: 8px; padding: 6px 12px 8px; }
+.team .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.team .tname { font-size: 28px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team .seed { font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #fff; background: var(--navy); border-radius: 4px; padding: 3px 8px; white-space: nowrap; }
+.team .roster { margin-top: 2px; font-size: 20px; font-weight: 500; color: var(--navy); }
+.team .roster span + span::before { content: ' · '; color: var(--periwinkle); }
+/* Next-up card: top right, both views. Live game with score if one is on,
+   otherwise the next scheduled game. From the feed's live[] / up_next[]. */
+#hdr { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 6px; min-height: 48px; }
+#hdr h1 { align-self: flex-start; }
+#next { flex: 0 0 420px; width: 420px; background: var(--ice); color: var(--navy-deep); border: 2px solid var(--periwinkle); border-radius: 8px; overflow: hidden; display: none; }
+#next.show { display: block; }
+#next .nhead { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #fff; background: var(--navy); padding: 5px 12px; }
+#next.live .nhead { background: #c2184f; }
+#next .nteam { display: flex; align-items: center; justify-content: space-between; padding: 1px 12px; font-size: 24px; font-weight: 700; line-height: 1.25; }
+#next .nteam:last-child { padding-bottom: 6px; }
+#next .nteam .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#next .nteam .score { min-width: 34px; text-align: center; margin-left: 12px; background: var(--navy-deep); color: #fff; border-radius: 4px; padding: 0 8px; }
+#next .nsub { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--navy); padding: 4px 12px 0; }
+#status { position: fixed; right: 14px; bottom: 10px; font-size: 11px; color: var(--navy); letter-spacing: .08em; }
+#status.err { color: #ff8a8a; }
+</style>
+</head>
+<body>
+<form id="bar" autocomplete="off"><input id="link" type="text" placeholder="paste a shufflepolo.com tournament link and press Enter"><button type="submit">Load</button><span class="hint" id="hint"></span><span class="views"><button type="button" id="viewBracket" class="sel">Bracket</button><button type="button" id="viewTeams">Teams</button></span><button type="button" id="stream" title="Show this bracket as a layer on the livestream display">Show on stream</button></form>
+<div id="root"><div id="hdr"><h1 id="title">Bracket</h1><div id="next"></div></div><div id="sections"></div><div id="teams"><div class="team-grid" id="teamGrid"></div></div></div>
+<div id="status"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(function () {
+  const params = new URLSearchParams(location.search);
+  const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  const tParam = params.get('t') ? (UUID_RE.exec(params.get('t')) || [null])[0] : null;
+  // Everything goes through /api/ladder (bracket, teams, live/next from the
+  // feed); without ?t= the tournament id comes from the sync's state.
+  let SRC = params.get('src') || (tParam ? `/api/ladder?t=${tParam}` : null);
+  async function resolveSrc() {
+    if (SRC) return SRC;
+    const r = await fetch('/api/sync/shufflepolo/bracket', { cache: 'no-store' });
+    if (!r.ok) throw new Error('no sync tournament configured');
+    const d = await r.json();
+    const id = d.tournament && d.tournament.id;
+    if (!id) throw new Error('sync state has no tournament id yet');
+    SRC = `/api/ladder?t=${id}`;
+    return SRC;
+  }
+  if (params.get('bare')) document.body.classList.add('bare');
+  const bar = document.getElementById('bar'), linkInput = document.getElementById('link');
+  if (tParam) linkInput.value = `https://shufflepolo.com/t/${tParam}`;
+  document.getElementById('hint').textContent = tParam ? '' : 'showing the tournament the sync follows';
+  bar.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const m = UUID_RE.exec(linkInput.value);
+    if (!m) { document.getElementById('hint').textContent = 'no tournament id in that link'; return; }
+    const q = new URLSearchParams(location.search); q.set('t', m[0].toLowerCase()); q.delete('src');
+    location.search = q.toString();
+  });
+  const ORDER = ['Grand Final', 'Winners Bracket', 'Losers Bracket'];
+  const root = document.getElementById('root');
+  const sectionsEl = document.getElementById('sections');
+  const statusEl = document.getElementById('status');
+  let lastJson = null;
+
+  function outcome(g) {
+    if (g.score1 === null || g.score2 === null || g.score1 === g.score2) return [null, null];
+    return g.score1 > g.score2 ? ['winner', 'loser'] : ['loser', 'winner'];
+  }
+
+  function card(g) {
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.dataset.id = g.id;
+    const [c1, c2] = outcome(g);
+    const team = (name, score, cls) => `<div class="team ${cls || ''} ${name === 'TBD' ? 'tbd' : ''}">
+        <span class="name">${esc(name)}</span>${score === null ? '' : `<span class="score">${score}</span>`}</div>`;
+    el.innerHTML = `<div class="head"><span>Game ${g.number ?? ''}</span><span>${esc(g.time || '')}</span></div>`
+      + team(g.team1 || 'TBD', g.score1, c1) + team(g.team2 || 'TBD', g.score2, c2);
+    return el;
+  }
+
+  function renderSection(name, games, bracketName) {
+    const sec = document.createElement('div');
+    sec.className = 'section';
+    sec.innerHTML = `<div class="section-title">${esc(name)}</div>`;
+    const ladder = document.createElement('div');
+    ladder.className = 'ladder';
+    const withGrid = games.filter((g) => g.grid);
+    if (!withGrid.length) {
+      // single card sections (Grand Final): centre it
+      ladder.classList.add('centered');
+      ladder.style.gridTemplateColumns = 'var(--card-w)';
+      for (const g of games) { const c = card(g); c.style.gridRow = '2'; ladder.appendChild(c); }
+      sec.appendChild(ladder);
+      return sec;
+    }
+    const maxCol = Math.max(...withGrid.map((g) => g.grid.column));
+    const maxRow = Math.max(...withGrid.map((g) => g.grid.rowEnd));
+    const rounds = (maxCol + 1) / 2; // page columns 1,3,5... are rounds; even columns are gutters
+    ladder.style.gridTemplateColumns = `repeat(${rounds}, var(--card-w))`;
+    ladder.style.gridTemplateRows = `auto repeat(${Math.max(1, maxRow - 2)}, var(--row-h))`;
+    // round labels, from the games' own labels per column
+    const labels = new Map();
+    for (const g of withGrid) if (!labels.has(g.grid.column)) labels.set(g.grid.column, g.roundLabel || `Round ${g.round}`);
+    for (const [col, label] of labels) {
+      const l = document.createElement('div');
+      l.className = 'round-label'; l.textContent = label; l.style.gridColumn = String((col + 1) / 2);
+      ladder.appendChild(l);
+    }
+    for (const g of withGrid) {
+      const c = card(g);
+      c.style.gridColumn = String((g.grid.column + 1) / 2);
+      c.style.gridRow = `${g.grid.row} / ${g.grid.rowEnd}`;
+      ladder.appendChild(c);
+    }
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'connectors');
+    ladder.appendChild(svg);
+    sec.appendChild(ladder);
+    sec._games = withGrid;
+    return sec;
+  }
+
+  // A card in round r+1 whose row span covers a card in round r is fed by it.
+  function drawConnectors(sec) {
+    const ladder = sec.querySelector('.ladder'), svg = ladder && ladder.querySelector('svg.connectors');
+    if (!svg || !sec._games) return;
+    const base = ladder.getBoundingClientRect();
+    svg.setAttribute('width', ladder.scrollWidth); svg.setAttribute('height', ladder.scrollHeight);
+    svg.innerHTML = '';
+    const byId = new Map([...ladder.querySelectorAll('.card')].map((el) => [el.dataset.id, el]));
+    const rect = (g) => { const r = byId.get(g.id).getBoundingClientRect(); return { x1: r.left - base.left, x2: r.right - base.left, y: r.top - base.top + r.height / 2 }; };
+    for (const to of sec._games) {
+      const feeders = sec._games.filter((f) => f.grid.column === to.grid.column - 2 && f.grid.row >= to.grid.row && f.grid.rowEnd <= to.grid.rowEnd);
+      if (!feeders.length) continue;
+      const t = rect(to); const midX = t.x1 - 28;
+      for (const f of feeders) {
+        const s = rect(f);
+        const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        p.setAttribute('d', `M ${s.x2} ${s.y} H ${midX} V ${t.y} H ${t.x1}`);
+        svg.appendChild(p);
+      }
+    }
+  }
+
+  function fitToWidth() {
+    const forced = Number(params.get('scale'));
+    root.style.transform = '';
+    const avail = document.documentElement.clientWidth - 80;
+    const scale = forced || Math.min(1, avail / root.scrollWidth);
+    root.style.transform = `scale(${scale})`;
+    document.body.style.height = `${root.scrollHeight * scale + 56}px`;
+  }
+
+  // Views: 'bracket' or 'teams'. In bare (on-air) mode they alternate every
+  // CYCLE_S seconds so the layer shows the ladder, then the team list.
+  let view = params.get('view') === 'teams' ? 'teams' : 'bracket';
+  const CYCLE_S = params.get('cycle') !== null ? Number(params.get('cycle')) : 30;
+  let lastData = null;
+  const titles = { bracket: 'Bracket', teams: 'Teams' };
+  function setView(v) {
+    view = v;
+    document.getElementById('title').innerHTML = titles[v];
+    root.classList.toggle('teams-mode', v === 'teams');
+    document.getElementById('teams').classList.toggle('show', v === 'teams');
+    document.getElementById('viewBracket').className = v === 'bracket' ? 'sel' : '';
+    document.getElementById('viewTeams').className = v === 'teams' ? 'sel' : '';
+    if (lastData) { fitToWidth(); document.querySelectorAll('.section').forEach(drawConnectors); }
+  }
+  document.getElementById('viewBracket').addEventListener('click', () => setView('bracket'));
+  document.getElementById('viewTeams').addEventListener('click', () => setView('teams'));
+  // On air: alternate, but never show an empty view (no bracket drawn yet, or no teams).
+  function hasContent(v) {
+    if (!lastData) return true;
+    return v === 'bracket' ? (lastData.page_games || []).length > 0 : (lastData.teams || []).length > 0;
+  }
+  if (params.get('bare') && CYCLE_S > 0) setInterval(() => {
+    const other = view === 'bracket' ? 'teams' : 'bracket';
+    if (hasContent(other)) setView(other); else if (!hasContent(view) && hasContent(other)) setView(other);
+  }, CYCLE_S * 1000);
+
+  function renderTeams(data) {
+    const teams = data.teams || [];
+    const tname = (data.tournament && data.tournament.name) || '';
+    titles.teams = `Teams${tname ? `<small>${esc(tname)}</small>` : ''}`;
+    const grid = document.getElementById('teamGrid');
+    grid.style.gridTemplateColumns = `repeat(${teams.length > 12 ? 4 : 3}, 1fr)`;
+    grid.innerHTML = teams.map((t) => `<div class="team"><div class="top"><span class="tname">${esc(t.name)}</span>${t.seed !== null ? `<span class="seed">Seed ${t.seed}</span>` : ''}</div>
+      ${t.roster && t.roster.length ? `<div class="roster">${t.roster.map((p) => `<span>${esc(p)}</span>`).join('')}</div>` : ''}</div>`).join('');
+  }
+
+  function fmtTime(iso, tz) {
+    if (!iso) return '';
+    try { return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: tz || undefined }); } catch { return ''; }
+  }
+  function renderNext(data) {
+    const el = document.getElementById('next');
+    const live = (data.live || [])[0];
+    const g = live || (data.up_next || [])[0];
+    if (!g) { el.className = ''; el.innerHTML = ''; return; }
+    const court = g.court_name || (g.court ? `Court ${g.court}` : '');
+    const when = live ? 'LIVE' : `Next up${g.starts_at ? ' · ' + fmtTime(g.starts_at, data.time_zone) : ''}`;
+    const sub = [g.section, g.round ? `Round ${g.round}` : null].filter(Boolean).join(' · ');
+    const team = (t) => `<div class="nteam"><span class="name">${esc((t && t.name) || 'TBD')}</span>${live && t && t.score !== null && t.score !== undefined ? `<span class="score">${t.score}</span>` : ''}</div>`;
+    el.className = `show${live ? ' live' : ''}`;
+    el.innerHTML = `<div class="nhead"><span>${esc(when)}</span><span>${esc(court)}</span></div>${sub ? `<div class="nsub">${esc(sub)}</div>` : ''}${team(g.team1)}${team(g.team2)}`;
+  }
+
+  function render(data) {
+    lastData = data;
+    if (params.get('bare') && !hasContent(view) && hasContent(view === 'bracket' ? 'teams' : 'bracket')) view = view === 'bracket' ? 'teams' : 'bracket';
+    renderNext(data);
+    renderTeams(data);
+    const games = data.page_games || [];
+    const tname = (data.tournament && data.tournament.name) || '';
+    const brackets = [...new Set(games.map((g) => g.bracket || 'Bracket'))];
+    titles.bracket = `${esc(brackets[0] || 'Bracket')}${tname ? `<small>${esc(tname)}</small>` : ''}`;
+    sectionsEl.innerHTML = '';
+    const secs = [];
+    for (const b of brackets) {
+      const inB = games.filter((g) => (g.bracket || 'Bracket') === b);
+      const names = [...new Set(inB.map((g) => g.section || ''))].sort((a, c) => (ORDER.indexOf(a) === -1 ? 99 : ORDER.indexOf(a)) - (ORDER.indexOf(c) === -1 ? 99 : ORDER.indexOf(c)));
+      for (const n of names) { const sec = renderSection(n || b, inB.filter((g) => (g.section || '') === n), b); sectionsEl.appendChild(sec); secs.push(sec); }
+    }
+    setView(view);
+    secs.forEach(drawConnectors);
+    fitToWidth();
+    secs.forEach(drawConnectors); // positions change with the scale
+    statusEl.className = '';
+    statusEl.textContent = games.length ? `${games.length} games · page read ${data.page_read_at ? new Date(data.page_read_at).toLocaleTimeString() : '—'}` : 'no bracket games yet';
+  }
+
+  async function load() {
+    try {
+      const res = await fetch(await resolveSrc(), { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      if (text !== lastJson) { lastJson = text; render(JSON.parse(text)); }
+    } catch (e) {
+      statusEl.className = 'err'; statusEl.textContent = `load failed: ${e.message}`;
+    }
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+  // "Show on stream": the display (/display, the ATEM's HDMI input) adds this
+  // page as a full-frame layer, luma-keyed over the program. State lives in
+  // gameState.ladder so every open copy of this page shows the same button.
+  const streamBtn = document.getElementById('stream');
+  let ladderState = { active: false, tournament: null };
+  const sameTournament = () => (ladderState.tournament || null) === (tParam || null);
+  function renderStreamBtn() {
+    const on = ladderState.active && sameTournament();
+    streamBtn.className = on ? 'on' : '';
+    streamBtn.textContent = on ? 'Hide from stream' : (ladderState.active ? 'Show on stream (replaces current)' : 'Show on stream');
+  }
+  if (!params.get('bare') && window.io) {
+    const socket = io();
+    socket.on('gameUpdate', (gs) => { if (gs && gs.ladder) { ladderState = gs.ladder; renderStreamBtn(); } });
+    streamBtn.addEventListener('click', () => {
+      const on = ladderState.active && sameTournament();
+      socket.emit('setLadder', { active: !on, tournament: tParam });
+    });
+  }
+
+  load();
+  setInterval(load, 30000);
+  addEventListener('resize', () => { fitToWidth(); document.querySelectorAll('.section').forEach(drawConnectors); });
+})();
+</script>
+</body>
+</html>
