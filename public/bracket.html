@@ -812,6 +812,7 @@ const SYNC_PROVIDERS = [
         label: 'Shufflepolo Sync',
         fields: [
             { name: 'tournamentId', label: 'Tournament ID', type: 'text', placeholder: 'UUID from the tournament page URL' },
+            { name: 'court', label: 'Court', type: 'text', placeholder: 'Court number as shown on shufflepolo.com (default 1)' },
             { name: 'feedUrl', label: 'Feed URL (optional)', type: 'text', placeholder: 'Defaults to the production feed' },
         ],
         formatStatus(status) {

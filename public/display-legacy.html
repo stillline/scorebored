@@ -79,12 +79,6 @@ svg{display:block;width:100%;height:auto}
     display: none !important;
 }
 
-/* placeholder feed styling - functional only, visual pass comes later */
-#feed{position:absolute;left:24px;top:24px;width:420px;
-  display:flex;flex-direction:column;gap:6px;font-family:var(--face)}
-#feed .feed-entry{background:var(--floor);color:var(--white);
-  font-size:20px;font-weight:700;padding:8px 14px;border-radius:6px;
-  opacity:0.92}
 </style>
 </head>
 <body>
@@ -142,7 +136,6 @@ svg{display:block;width:100%;height:auto}
       <text id="clock" class="clock" x="927" y="112">12:00</text>
     </svg>
   </div>
-  <div id="feed"></div>
 </div>
 
 <!-- Commercial Break Video Overlay -->
@@ -170,8 +163,7 @@ const L = {
 const el = id => document.getElementById(id);
 const D = { clock: el("clock"), nameA: el("nameA"), nameB: el("nameB"),
             scoreA: el("scoreA"), scoreB: el("scoreB"),
-            penA: el("penA"), penB: el("penB"), pips: el("pips"),
-            feed: el("feed") };
+            penA: el("penA"), penB: el("penB"), pips: el("pips") };
 const memo = { name:[null,null], score:[null,null], pen:[null,null], to:[null,null] };
 
 /* Shrink to fit, then compress letterspacing as a last resort, so a long
@@ -306,41 +298,6 @@ function renderClockNow(){
 
 setInterval(renderClockNow, 250);
 
-/* placeholder feed rendering - functional only, visual pass comes later */
-const FEED_MAX_SHOWN = 6;
-let lastFeedId = null;
-
-function feedLabel(entry, gameState){
-  const side = entry.side === "left" ? (gameState.leftTeam || "Left") : entry.side === "right" ? (gameState.rightTeam || "Right") : null;
-  switch(entry.type){
-    case "goal": return side + " GOAL";
-    case "goal_removed": return side + " goal removed";
-    case "timeout": return side + " timeout";
-    case "penalty_start": return side + " penalty";
-    case "penalty_end": return side + " penalty over";
-    case "period": return "Period: " + entry.phase;
-    case "game_end": return "GAME OVER  " + (entry.leftTeam||"") + " " + entry.leftScore + " - " + entry.rightScore + " " + (entry.rightTeam||"");
-    case "game_start": return "New Game: " + (entry.leftTeam||"") + " vs " + (entry.rightTeam||"");
-    default: return entry.type;
-  }
-}
-
-function renderFeed(gameState){
-  const feed = gameState.feed || [];
-  const newestId = feed.length ? feed[feed.length - 1].id : null;
-  if(newestId === lastFeedId) return;
-  lastFeedId = newestId;
-
-  const shown = feed.slice(-FEED_MAX_SHOWN);
-  while(D.feed.firstChild) D.feed.removeChild(D.feed.firstChild);
-  shown.forEach(entry => {
-    const div = document.createElement("div");
-    div.className = "feed-entry";
-    div.textContent = feedLabel(entry, gameState);
-    D.feed.appendChild(div);
-  });
-}
-
 function renderDisplay(gameState){
   console.log('Updating display with gameState:', gameState);
 
@@ -389,7 +346,6 @@ function renderDisplay(gameState){
   });
 
   renderPips(timeouts.left, timeouts.right);
-  renderFeed(gameState);
 }
 
 /* ---- commercial break (unchanged from prior display.html) ---- */

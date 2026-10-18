@@ -1,8 +1,12 @@
 "use strict";
-// Shared rendering logic for the scorebug system - loaded by both
-// public/editor.html (WYSIWYG preview) and public/display.html (the real
-// broadcast output), so the two can never visually drift apart: they call
-// the exact same functions, not two implementations kept in sync by hand.
+// Shared rendering/data-binding logic for the scorebug system. Two
+// consumers: public/display.html (renderPreset/tickClockElements, for the
+// legacy element-based preset layout still supported for backward
+// compatibility) and public/overlay-bind.js (resolveBinding/
+// computeClockDisplay only, for the [data-role] live-binding on pasted
+// HTML overlays - see docs/sync.md and docs/scorebug-editor.md). Both
+// paths share the exact same gameState -> display-text resolution, so
+// they can never drift apart by having two hand-kept implementations.
 //
 // Everything here is pure / stateless except where explicitly noted (the
 // clock helpers take an externally-anchored clock object rather than
@@ -102,6 +106,16 @@ function debugLogClock(currentClock, result){
   });
 }
 
+// Shared by the main clock and timeoutBanner - plain "M:SS", no sign/
+// padding beyond seconds (a timeout never runs into overtime, so this never
+// needs computeClockDisplay's "+" prefix handling).
+function formatMinutesSeconds(totalSeconds) {
+  const secs = Math.max(0, Math.round(totalSeconds));
+  const mm = Math.floor(secs / 60);
+  const ss = String(secs % 60).padStart(2, "0");
+  return mm + ":" + ss;
+}
+
 function computeClockDisplay(currentClock) {
   // "--:--" rather than "" - an empty string measures to ~0 width, which
   // collapses an autoSized clock element down to the Math.max(1,...) floor
@@ -126,9 +140,7 @@ function computeClockDisplay(currentClock) {
     ({ secs, overtime } = secondsFromPodiumClock(currentClock, elapsedSeconds));
   }
 
-  const mm = Math.floor(secs / 60);
-  const ss = String(secs % 60).padStart(2, "0");
-  const formatted = mm + ":" + ss;
+  const formatted = formatMinutesSeconds(secs);
   const result = { text: overtime ? "+" + formatted : formatted, stopped: !running };
   debugLogClock(currentClock, result);
   return result;
@@ -165,63 +177,17 @@ function countPenalties(penaltiesForSide) {
   return String((penaltiesForSide || []).length);
 }
 
-// -------------------------------------------------------------------- feed
+// -------------------------------------------------------------- penalties
 //
-// Feed colors per entry type (goal=green, penalty=yellow, ejection=red),
-// applied per-line in renderElement - see FEED_COLOR below. Neutral events
-// (timeouts, period/game markers) use the element's own text color.
-
-const FEED_MAX_SHOWN = 6;
-
-const FEED_COLOR = {
-  goal: "#3BD16F",
-  penalty_minor: "#F5C542",
-  penalty_major: "#F5C542",
-  turnover: "#F5C542",
-  ejection: "#E5484D",
+// Penalty severity as server.js normalizes it for every provider (Podium
+// reports it directly; Shufflepolo's codes are mapped in
+// applyShufflepoloSnapshot), to the word the penaltyBanner shows.
+const PENALTY_SEVERITY_LABEL = {
+  minor: "MINOR",
+  major: "MAJOR",
+  turnover: "TURNOVER",
+  ejection: "EJECTED",
 };
-
-// FEED_COLOR_TYPES drives the editor's per-type color pickers (see
-// renderFeedColorProps in editor.html) - one row per key here, in this
-// order. Keep this in sync with feedLabel's switch above: every type that
-// produces visible feed text belongs here (goal_removed/penalty_end/period/
-// game_start/game_end are rare/neutral narration, left out to keep the
-// props panel short).
-const FEED_COLOR_TYPES = ["goal", "penalty_minor", "penalty_major", "turnover", "ejection", "timeout"];
-
-function feedColorFor(type, overrides) {
-  if (overrides && overrides[type]) return overrides[type];
-  return FEED_COLOR[type] || null;
-}
-
-// entry.player is set when the source (Podium's last_goal, Shufflepolo's
-// goals/penalties logs) attributed the event to a specific player; null for
-// an unattributed goal or a team-level penalty - see applyPodiumSnapshot /
-// applyShufflepoloSnapshot in server.js.
-function feedLabel(entry, gameState) {
-  const side = entry.side === "left" ? (gameState.leftTeam || "Left") : entry.side === "right" ? (gameState.rightTeam || "Right") : null;
-  const who = entry.player ? (entry.player + " (" + side + ")") : side;
-  switch (entry.type) {
-    case "goal": return "GOAL — " + who;
-    case "goal_removed": return side + " goal removed";
-    case "timeout": return "TIMEOUT — " + side;
-    case "penalty_minor": return "MINOR — " + who;
-    case "penalty_major": return "MAJOR — " + who;
-    case "turnover": return "TURNOVER — " + who;
-    case "ejection": return "EJECTED — " + who;
-    case "penalty_start": return "PENALTY — " + who;
-    case "penalty_end": return side + " penalty over";
-    case "period": return "Period: " + entry.phase;
-    case "game_end": return "GAME OVER  " + (entry.leftTeam || "") + " " + entry.leftScore + " - " + entry.rightScore + " " + (entry.rightTeam || "");
-    case "game_start": return "New Game: " + (entry.leftTeam || "") + " vs " + (entry.rightTeam || "");
-    default: return entry.type;
-  }
-}
-
-function recentFeedEntries(gameState, maxEntries) {
-  const feed = gameState.feed || [];
-  return feed.slice(-(maxEntries || FEED_MAX_SHOWN));
-}
 
 // ------------------------------------------------------------ role binding
 //
@@ -254,15 +220,25 @@ function resolveBinding(role, side, gameState, element) {
       return countTimeouts(side === "left" ? timeouts.left : timeouts.right);
     case "penaltyCount":
       return countPenalties(side === "left" ? penalties.left : penalties.right);
-    case "feed": {
-      // An array of {text, color} lines rather than one joined string, so
-      // renderElement can color each line by event type (goal/penalty/
-      // ejection). element.feedColors (set in the editor's props panel,
-      // keyed by feed entry type) overrides FEED_COLOR's defaults per
-      // preset - see feedColorFor().
-      const feedColors = (element && element.feedColors) || {};
-      return recentFeedEntries(gameState).map(e => ({ text: feedLabel(e, gameState), color: feedColorFor(e.type, feedColors) }));
+    case "timeoutBanner": {
+      // gameState.activeTimeout: {side, remainingSeconds} | null - a real,
+      // ongoing countdown (see applyPodiumSnapshot/applyShufflepoloSnapshot
+      // in server.js), unlike penaltyBanner below. null here (not "") is
+      // the signal overlay-bind.js uses to hide the node - see its
+      // data-live-hidden handling.
+      // No countdown on screen (operator decision): the word only.
+      const at = gameState.activeTimeout;
+      if (!at || at.side !== side) return null;
+      return "Timeout";
     }
+    case "penaltyBanner":
+      // Deliberately NOT resolved here - a penalty's real active window
+      // depends on referee timing the feed never exposes, so unlike
+      // timeoutBanner there is no gameState-backed "is it still active" to
+      // check (see docs/scorebug-editor.md). overlay-bind.js's renderNode
+      // special-cases this role entirely, reading its own local, fixed-
+      // duration announcement timer instead of calling resolveBinding.
+      return null;
     default:
       return "";
   }
@@ -485,17 +461,9 @@ function renderElement(element, value) {
 
   // dataText
   const t = element.text || {};
-  const isFeed = element.role === "feed";
-  const whiteSpace = isFeed ? "pre-line" : "nowrap";
+  const whiteSpace = "nowrap";
 
-  // The feed role never autoSizes, even if t.autoSize is set (stale presets
-  // saved before this existed, or a copy/paste from another element): its
-  // box is a deliberate, author-sized viewport that always shows up to
-  // FEED_MAX_SHOWN lines - hugging "however much text happens to be in the
-  // feed right now" would make it shrink to one line on a fresh game and
-  // fight any manual resize the moment the next event redraws it. Every
-  // other role still autosizes to its (always single-line) resolved text.
-  if (t.autoSize && !isFeed) {
+  if (t.autoSize) {
     const { width, height } = measureText(value, t, whiteSpace);
     const cx = element.x + element.w / 2;
     const cy = element.y + element.h / 2;
@@ -523,17 +491,7 @@ function renderElement(element, value) {
     node.style.opacity = element.fill.opacity ?? 1;
   }
 
-  if (isFeed) {
-    value.forEach((line, i) => {
-      if (i > 0) node.appendChild(document.createElement("br"));
-      const span = document.createElement("span");
-      if (line.color) span.style.color = line.color;
-      span.textContent = line.text;
-      node.appendChild(span);
-    });
-  } else {
-    node.textContent = value;
-  }
+  node.textContent = value;
   return node;
 }
 

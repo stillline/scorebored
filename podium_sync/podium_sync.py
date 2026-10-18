@@ -111,6 +111,14 @@ def penalty_to_dict(p):
     }
 
 
+def timeout_to_dict(t):
+    return {
+        "id": t.id,
+        "side": t.side,
+        "remaining_seconds": t.remaining_seconds(),
+    }
+
+
 def build_live_snapshot(state: State, last_goal=None):
     game = state.game
     if game is None:
@@ -137,6 +145,7 @@ def build_live_snapshot(state: State, last_goal=None):
 
     penalties_home = [penalty_to_dict(p) for p in game.active_penalties() if p.side == "home"]
     penalties_away = [penalty_to_dict(p) for p in game.active_penalties() if p.side == "away"]
+    running_timeout = game.running_timeout()
 
     return {
         "connected": True,
@@ -159,6 +168,7 @@ def build_live_snapshot(state: State, last_goal=None):
             "home": penalties_home,
             "away": penalties_away,
         },
+        "active_timeout": timeout_to_dict(running_timeout) if running_timeout else None,
         # Only set on the specific push that announces a new goal (the
         # "goal" trigger) - server.js reads this to label the feed entry
         # with who scored. Not derived from game.goals (cumulative), so it

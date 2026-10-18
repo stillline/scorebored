@@ -23,7 +23,7 @@ write or PATCH anything back.
 |----------|-----------|----------|--------------|
 | Challonge | `challonge/challonge_sync.py` (Python) | Polled | `challonge-config.json` |
 | Podium | `podium_sync/podium_sync.py` (Python, uses the vendored `libpodium` client) | Pushed (live) | `podium-config.json` |
-| Shufflepolo | `shufflepolo_sync/shufflepolo_sync.js` (Node) | Polled snapshot + realtime subscribe | `shufflepolo-config.json` |
+| Shufflepolo | `shufflepolo_sync/shufflepolo_sync.js` (Node) | Realtime signal + conditional re-read (pushed) | `shufflepolo-config.json` |
 
 Config files are gitignored and auto-created — set them up via the
 `/bracket` page's sync panel (API keys show masked as `••••••••` once saved;
@@ -73,19 +73,99 @@ doesn't need to special-case any provider except where noted below.
   the UUID either way (`normalizeField` in the provider definition), since
   Shufflepolo's feed has no list/lookup endpoint and the UUID is only ever
   visible by pasting the page URL.
+- Optional: `court` — the court number as shown on shufflepolo.com (default
+  1). The sync shows that court's `current_game` as the feed picks it (its
+  live game, else the next one after the last finished), so a game on another
+  court never reaches the scoreboard.
 - No API key — the feed is public/anonymous.
-- Polls a snapshot endpoint and subscribes to a realtime feed for live
-  score/clock updates.
+- Follows Shufflepolo's feed contract (`docs/scoreboard-feed.md` in their
+  repo; our client is derived from their reference client): one websocket
+  joined to every topic the snapshot names (`games:<id>` for scores/clocks,
+  `feed:<id>` for goals/penalties/timeouts — a penalty is only ever on the
+  second), a re-read on any message throttled to one per 2 s, a re-read at
+  each live clock's `live_until`, and a safety poll once per 5 minutes. Every
+  read sends `If-None-Match`; a 304 means nothing changed and nothing is
+  written or pushed. Pushes therefore arrive only when the tournament
+  changed, not on a timer.
+- `POST /api/sync/shufflepolo/resync` asks the running sync for a full
+  re-read and push even if nothing changed (recovers a display that dropped
+  an update). `lib/sync.js` also restarts the child if it exits on its own
+  (with backoff) or if its `status.json` goes stale (`staleAfterMs`).
+- Timeouts: Shufflepolo's console stops the clock when a timeout is called
+  and ends it when the clock starts again; the feed carries no end time, so
+  server.js treats "the clock has run since the newest timeout" as the end,
+  with the platform's fixed 120 s as a ceiling.
 - **Clock sync:** Shufflepolo's clock shape (`{status, elapsed_seconds,
-  running_since, duration_seconds}`) is different from Podium's
-  (`{running, phase, remaining_seconds}`); `public/scorebug-render.js`
+  running_since, duration_seconds, overtime, live_until}`) is different from
+  Podium's (`{running, phase, remaining_seconds}`); `public/scorebug-render.js`
   detects and renders both. The subprocess measures its own clock-sync
-  offset against Shufflepolo's server close to the actual HTTP round trip
-  and carries it through as `clock_offset_ms` rather than letting any
-  downstream consumer (this server, the browser) recompute it against an
-  already-stale timestamp — see `docs/shufflepolo-clock-sync-fix.md` for
-  the full history of why this matters and what broke before it was fixed
-  this way.
+  offset against Shufflepolo's server at the actual HTTP round trip (keeping
+  the fastest sample, ageing it, and re-measuring at once if this machine's
+  wall clock is stepped — the Pi has no battery-backed clock) and carries it
+  through as `clock_offset_ms` rather than letting any downstream consumer
+  recompute it against an already-stale timestamp — see
+  `docs/shufflepolo-clock-sync-fix.md` for the history.
+
+
+### Bracket ladder from the tournament page (`shufflepolo_sync/page_bracket.js`, `/ladder`)
+
+The feed lists only games that exist with both teams, so unplayed bracket
+games (empty slots) never reach `bracket.json` and a ladder could not be shown
+ahead of play. The public tournament page draws the whole ladder, so the sync
+renders it with the Pi's Chromium (`chromium --headless=new --dump-dom`, own
+profile dir under /tmp, about 3 s) every 2 minutes
+(`SHUFFLEPOLO_PAGE_INTERVAL_MS`) and parses the game cards out of the DOM.
+Added 2026-10-14.
+
+- Anchors are the page's own `data-testid` hooks (`bracket-game-row-<id>`,
+  `bracket-game-number-`, `bracket-game-time-`, `bracket-game-slot-team1/2-`)
+  and each card's inline `grid-area` (row / column / row-end), which is the
+  page's own layout. Round = column (1, 3, 5, ... are rounds), round labels
+  and section names ("Grand Final", "Winners Bracket", "Losers Bracket") are
+  read from the text just before the cards. Tailwind class names are not used.
+- A render that yields no cards keeps the previous result and logs; a render
+  failure (Chromium error, timeout) does the same. The last good parse is
+  written as `page_games[]` (plus `page_read_at`) in
+  `shufflepolo_sync/state/bracket.json`, served by
+  `GET /api/sync/shufflepolo/bracket`.
+- `bracket.json` (the Next/Prev Game schedule) now takes its bracket-phase
+  matchups from the page, in game-number order with TBD slots and the page's
+  local start time, under the bracket's name; group-stage matchups still come
+  from the feed. Without a page result it falls back to the feed's bracket
+  games as before.
+- `/ladder` (`public/bracket-ladder.html`) draws `page_games` like the
+  Shufflepolo page, in the on-air scorebug's palette (NAHBPC_2026_2 tokens:
+  navy, periwinkle, ice, ink, Chakra Petch): sections, round labels, cards
+  placed on the same grid, connectors drawn where a card's row span covers a
+  card in the previous round. Winner bold with a navy-deep score chip, loser
+  dimmed, TBD in periwinkle. Auto-fits to the window width; `?scale=` forces a
+  scale, `?src=` loads another JSON (used for previews). Reloads every 30 s.
+- By default `/ladder` shows the tournament the sync follows
+  (`shufflepolo-config.json`). Paste any shufflepolo.com tournament link into
+  the box at the top (or open `/ladder?t=<link or uuid>`) and the server
+  renders that tournament instead via `GET /api/ladder?t=`, cached per
+  tournament for 2 minutes with concurrent requests sharing one render; only
+  `shufflepolo.com/t/<uuid>` is ever rendered. `?bare=1` hides the box for an
+  on-air window.
+- **Show on stream** (button on `/ladder`): the display page adds a full-frame
+  `#ladderFrame` layer pointed at `/ladder?bare=1&t=<uuid>` when
+  `gameState.ladder.active` is set (socket event `setLadder {active,
+  tournament}`), above the scorebug overlay and below a commercial break. The
+  ladder's background is pure black so the ATEM's luma key drops it and the
+  bracket cards sit over the program; every other colour on the page is at or
+  above the scorebug's ~25 % luma floor. The button reflects the live state
+  (red "Hide from stream" when this tournament is on air) in every open copy
+  of the page.
+- The page also reads the tournament's Teams section (`team-card-<id>`,
+  `team-seed-badge`, `team-roster`) into `teams[]`. `/ladder` has a Bracket /
+  Teams toggle; in bare (on-air) mode it alternates the two every 30 s
+  (`?cycle=<s>`, `cycle=0` pins the bracket, `?view=teams` starts on teams).
+- A **Next up** card sits top right in both views: the live game with score
+  if one is on (red header), otherwise the first `up_next` game with court and
+  start time in the tournament's time zone. `/api/ladder` merges `live[]`,
+  `suspended[]`, `up_next[]` and `time_zone` from the scoreboard feed for the
+  same tournament (15 s cache), so the card is live for any pasted link, not
+  just the sync's tournament. Hidden when there is nothing live or scheduled.
 
 ## Viewing synced data
 
