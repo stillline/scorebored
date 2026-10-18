@@ -21,5 +21,9 @@ overlays/*
 !overlays/overlay_daca270d.json
 !overlays/templates/
 
+# Local copies of the Shufflepolo app repo, for reference only
+shufflepolo_repo/
+shufflepolo_repo_code_examples/
+
 # Relay profiles: stream keys (lib/relay.js), mode 600
 relay-profiles.json
