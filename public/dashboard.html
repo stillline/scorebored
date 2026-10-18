@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard</title>
+    <style>
+        /* One page that shows the live state of every Scorebored area and
+           exposes only the mid-stream actions. Heavy editors stay on their
+           own pages and are linked from each card. Styles are lifted from
+           control.html (cards, score/action/ATEM buttons), network.html
+           (badges, stat tiles, toast) and bracket.html (toggle switch). */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a1a; color: #fff; padding: 16px; min-height: 100vh;
+        }
+        @media (max-width: 600px) { body { padding: 12px; } }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 8px; color: #fff; }
+        .nav-links { text-align: center; margin-bottom: 16px; }
+        .nav-links a { color: #888; text-decoration: none; font-size: 14px; margin: 0 10px; }
+        .nav-links a:hover { color: #fff; }
+        .nav-links a.current { color: #fff; font-weight: 600; }
+
+        .status { text-align: center; margin-bottom: 14px; padding: 8px; border-radius: 8px; background: #2a2a2a; font-size: 13px; }
+        .status.connected { background: #1b5e20; }
+        .status.disconnected { background: #c62828; }
+
+        .grid { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }
+        @media (min-width: 720px) {
+            .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .span2 { grid-column: span 2; }
+        }
+        @media (min-width: 1024px) { .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+        @media (min-width: 1600px) { .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+        .card {
+            background: #2a2a2a; border-radius: 12px; padding: 16px; border-left: 4px solid #444;
+            min-width: 0; display: flex; flex-direction: column; gap: 10px;
+        }
+        .card-hdr { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; flex-wrap: wrap; }
+        .card-hdr .links { display: flex; gap: 10px; flex-wrap: wrap; }
+        .card-hdr .links a { font-size: 12px; font-weight: 400; color: #4f8cff; text-decoration: none; white-space: nowrap; }
+        .card-hdr .links a:hover { text-decoration: underline; }
+        .card-game { border-left-color: #4CAF50; }
+        .card-display { border-left-color: #4f8cff; }
+        .card-commercial { border-left-color: #9c27b0; }
+        .card-atem { border-left-color: #ff5722; }
+        .card-sync { border-left-color: #00bcd4; }
+        .card-stream { border-left-color: #ff9800; }
+        .card-uplinks { border-left-color: #607d8b; }
+        .card-pages { border-left-color: #444; }
+
+        .badge { font-size: 10px; padding: 2px 7px; border-radius: 6px; font-weight: 600; white-space: nowrap; }
+        .bg { background: #2e7d32; } .br { background: #c62828; } .by { background: #f57f17; color: #000; } .bx { background: #444; }
+        .bp { background: #9c27b0; }
+        .muted { color: #888; font-size: 12px; }
+        .row { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; }
+        .row .l { color: #777; } .row .v { color: #ddd; font-weight: 600; }
+        .line { display: flex; justify-content: space-between; align-items: center; gap: 6px 8px; flex-wrap: wrap; font-size: 13px; padding: 6px 8px; background: #252525; border-radius: 6px; }
+        .line.col { flex-direction: column; align-items: flex-start; gap: 2px; }
+        .line.col .st { text-align: left; flex: none; }
+        .line .nm { font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+        .line .st { font-size: 11px; color: #888; flex: 1 1 120px; min-width: 0; text-align: right; overflow-wrap: anywhere; }
+        .line .st.ok { color: #4caf50; } .line .st.err { color: #f44336; } .line .st.warn { color: #ff9800; }
+        .btn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+        /* Game card */
+        .teams { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center; }
+        .team { text-align: center; min-width: 0; }
+        .team-name { font-size: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
+        .team-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; border: 1px solid #555; flex-shrink: 0; }
+        .score-controls { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px; }
+        .score-display { font-size: 44px; font-weight: 700; min-width: 64px; text-align: center; line-height: 1; }
+        .score-button {
+            background: #4CAF50; border: none; border-radius: 8px; color: white; font-size: 22px; font-weight: bold;
+            width: 48px; height: 48px; cursor: pointer; transition: background-color 0.2s; user-select: none;
+        }
+        .score-button { flex-shrink: 0; }
+        .score-button:hover { background: #45a049; }
+        .score-button:active { transform: scale(0.95); }
+        .score-button.minus { background: #f44336; }
+        .score-button.minus:hover { background: #da190b; }
+        .clock { text-align: center; font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; }
+        .clock.stopped { color: #aaa; }
+        .vs { text-align: center; }
+        @media (max-width: 480px) {
+            .teams { grid-template-columns: 1fr 1fr; }
+            .vs { grid-column: 1 / -1; grid-row: 1; }
+            .score-display { font-size: 36px; min-width: 48px; }
+        }
+        .action-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+        .action-button {
+            flex: 1; min-width: 110px; background: #666; border: none; border-radius: 8px; color: white; font-size: 14px; font-weight: bold;
+            padding: 10px; cursor: pointer; transition: background-color 0.2s;
+        }
+        .action-button:hover { background: #777; }
+        .action-button.reset { background: #ff9800; }
+        .action-button.reset:hover { background: #f57c00; }
+        .action-button:disabled { opacity: .4; cursor: not-allowed; }
+
+        /* Selects, checkboxes, small buttons */
+        select {
+            background: #3a3a3a; border: 1px solid #555; border-radius: 6px; color: #fff; padding: 8px 10px; font-size: 14px; width: 100%; cursor: pointer;
+        }
+        select:focus { outline: none; border-color: #888; }
+        select:disabled { opacity: .5; cursor: not-allowed; }
+        label.chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #ccc; cursor: pointer; }
+        .btn { border: none; border-radius: 6px; color: white; font-size: 12px; font-weight: 600; padding: 7px 12px; cursor: pointer; }
+        .btn:disabled { opacity: .3; cursor: not-allowed; }
+        .btn-p { background: #9c27b0; } .btn-o { background: #ff9800; } .btn-g { background: #555; } .btn-b { background: #1976d2; } .btn-r { background: #c62828; }
+        .scorebug-status { font-size: 13px; color: #9aa0ac; }
+        .scorebug-status.active { color: #4caf50; font-weight: bold; }
+        .scorebug-status.hidden-off { color: #ef5350; }
+
+        /* Commercial */
+        .commercial-controls { display: flex; gap: 8px; align-items: center; }
+        .commercial-button {
+            background: #9c27b0; border: none; border-radius: 8px; color: white; font-size: 14px; font-weight: bold;
+            padding: 10px 16px; cursor: pointer; transition: background-color 0.2s; flex: 1;
+        }
+        .commercial-button:hover { background: #8e24aa; }
+        .commercial-button:disabled { background: #555; cursor: not-allowed; }
+        .commercial-button.stop { background: #f44336; }
+        .commercial-button.stop:hover { background: #da190b; }
+
+        /* ATEM */
+        .input-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+        .input-button {
+            background: #666; border: none; border-radius: 6px; color: white; font-size: 14px; font-weight: bold;
+            width: 44px; height: 38px; cursor: pointer; transition: background-color 0.2s;
+        }
+        .input-button:hover { background: #777; }
+        .input-button.active { background: #ff5722; }
+        .input-button.graphics { background: #4caf50; width: 80px; }
+        .input-button.graphics:hover { background: #45a049; }
+        .input-button:disabled, .key-button:disabled { opacity: .4; cursor: not-allowed; }
+        .key-controls { display: flex; gap: 6px; flex-wrap: wrap; }
+        .key-button {
+            background: #666; border: none; border-radius: 8px; color: white; font-size: 13px; font-weight: bold;
+            padding: 9px 12px; cursor: pointer; transition: background-color 0.2s;
+        }
+        .key-button:hover { background: #777; }
+        .key-button.active { background: #4caf50; }
+
+        /* Toggle switch (bracket.html) */
+        .toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; flex-shrink: 0; }
+        .toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: relative; display: inline-block; width: 40px; height: 22px; background: #444; border-radius: 11px; flex-shrink: 0; transition: background 0.15s; }
+        .toggle-slider::before { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; background: #ccc; border-radius: 50%; transition: transform 0.15s, background 0.15s; }
+        .toggle input:checked + .toggle-slider { background: #2e7d32; }
+        .toggle input:checked + .toggle-slider::before { transform: translateX(18px); background: #fff; }
+        .toggle input:disabled + .toggle-slider { opacity: .4; }
+        .toggle input:focus-visible + .toggle-slider { outline: 2px solid #888; outline-offset: 2px; }
+
+        /* Uplinks tiles (network.html) */
+        .ac { background: #252525; border-radius: 6px; padding: 6px 8px; border-left: 3px solid #444; }
+        .ac.on { border-left-color: #4caf50; } .ac.off { border-left-color: #c62828; opacity: .5; }
+        .ac-hdr { display: flex; align-items: baseline; gap: 6px; margin-bottom: 3px; }
+        .ac-name { font-weight: 700; font-size: 12px; color: #fff; }
+        .ac-isp { font-size: 10px; color: #777; }
+        .sg { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 3px; }
+        .si { background: #1a1a1a; border-radius: 3px; padding: 2px 5px; }
+        .si .k { font-size: 9px; color: #666; text-transform: uppercase; }
+        .si .n { font-size: 14px; font-weight: 700; color: #fff; }
+        .si .n.sm { font-size: 12px; }
+        .si .u { font-size: 9px; color: #555; }
+        .mg { color: #4caf50; } .my { color: #ffc107; } .mr { color: #f44336; }
+        .hf { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 6px; background: #2e7d32; margin: 1px; }
+        .hf.bad { background: #c62828; }
+        .adapters { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px; }
+        .ifaces { display: flex; flex-wrap: wrap; gap: 4px; }
+        .iface { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #333; color: #888; }
+        .iface.c { background: #1b5e20; color: #ddd; }
+        .sub { font-size: 12px; font-weight: 600; color: #aaa; margin-top: 4px; }
+        .logline { font-family: monospace; font-size: 10px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        /* Pages */
+        .pages { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; }
+        .pages a { display: block; padding: 6px 8px; background: #252525; border-radius: 6px; text-decoration: none; color: #fff; font-size: 13px; }
+        .pages a:hover { background: #333; }
+        .pages a small { display: block; color: #777; font-size: 11px; }
+
+        .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid #444; border-top-color: #fff; border-radius: 50%; animation: sp .8s linear infinite; vertical-align: middle; margin-right: 4px; }
+        @keyframes sp { to { transform: rotate(360deg); } }
+        .toast { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 8px 14px; border-radius: 6px; font-size: 13px; z-index: 200; opacity: 0; transition: opacity .3s; pointer-events: none; max-width: 90vw; }
+        .toast.show { opacity: 1; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Dashboard</h1>
+        <div class="nav-links">
+            <a href="/dashboard" class="current">Dashboard</a>
+            <a href="/control">Control</a>
+            <a href="/bracket">Schedule</a>
+            <a href="/ladder" target="_blank">Ladder</a>
+            <a href="/display" target="_blank">Display</a>
+            <a href="/network">Network</a>
+            <a href="/teams">Teams</a>
+            <a href="/bracket-viewer/challonge" target="_blank">Challonge Data</a>
+            <a href="/bracket-viewer/podium" target="_blank">Podium Data</a>
+            <a href="/bracket-viewer/shufflepolo" target="_blank">Shufflepolo Data</a>
+            <a href="http://10.42.0.1:8000/" target="_blank">Companion</a>
+        </div>
+
+        <div class="status" id="status">Connecting...</div>
+
+        <div class="grid">
+
+            <!-- Game -->
+            <div class="card card-game span2">
+                <div class="card-hdr">
+                    <span>Game <span class="badge bx" id="gameBadge">no live game</span></span>
+                    <span class="links"><a href="/control">Control</a><a href="/bracket">Schedule</a></span>
+                </div>
+                <div class="teams">
+                    <div class="team">
+                        <div class="team-name"><i class="swatch" id="leftSwatch"></i><span id="leftTeam">Left</span></div>
+                        <div class="score-controls">
+                            <button class="score-button minus" onclick="updateScore('left', -1)">-</button>
+                            <div class="score-display" id="leftScore">0</div>
+                            <button class="score-button" onclick="updateScore('left', 1)">+</button>
+                        </div>
+                    </div>
+                    <div class="vs">
+                        <div class="clock stopped" id="clock">--:--</div>
+                        <div class="muted" id="clockSub"></div>
+                    </div>
+                    <div class="team">
+                        <div class="team-name"><span id="rightTeam">Right</span><i class="swatch" id="rightSwatch"></i></div>
+                        <div class="score-controls">
+                            <button class="score-button minus" onclick="updateScore('right', -1)">-</button>
+                            <div class="score-display" id="rightScore">0</div>
+                            <button class="score-button" onclick="updateScore('right', 1)">+</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="row" id="gameMeta"></div>
+                <div class="line"><span class="nm">Now playing</span><span class="st" id="nowPlaying">—</span></div>
+                <div class="line"><span class="nm">Up next</span><span class="st" id="upNext">—</span></div>
+                <div class="action-buttons">
+                    <button class="action-button" onclick="navigateGame(-1)">◀ Prev Game</button>
+                    <button class="action-button" onclick="navigateGame(1)">Next Game ▶</button>
+                    <button class="action-button" onclick="swapSides()">Swap Sides</button>
+                    <button class="action-button reset" onclick="resetGame()">Reset Game</button>
+                </div>
+            </div>
+
+            <!-- Display -->
+            <div class="card card-display">
+                <div class="card-hdr">
+                    <span>Display <span class="badge bx" id="ladderBadge">ladder off</span></span>
+                    <span class="links"><a href="/display" target="_blank">Display ↗</a><a href="/overlay-editor" target="_blank">Overlay Editor ↗</a><a href="/ladder" target="_blank">Ladder ↗</a></span>
+                </div>
+                <select id="scorebugSelector"><option value="">Default (built-in fallback)</option></select>
+                <div class="scorebug-status" id="scorebugStatus">Nothing active - showing built-in fallback layout</div>
+                <div class="btn-row">
+                    <button class="btn btn-g" id="scorebugHideBtn" title="Take the scorebug off the display (stage goes black, keyed out by the ATEM). The selection above is kept.">Hide scorebug from stream</button>
+                    <button class="btn btn-b" id="ladderBtn" onclick="toggleLadder()">Show ladder on stream</button>
+                    <button class="btn btn-g" onclick="socket.emit('reloadDisplay'); showToast('Display page reloading')">Refresh display page</button>
+                </div>
+                <label class="chk"><input type="checkbox" id="debugOverlayToggle"> Show debug panel on display</label>
+            </div>
+
+            <!-- Commercial Break -->
+            <div class="card card-commercial">
+                <div class="card-hdr">
+                    <span>Commercial Break <span class="badge bx" id="commercialBadge">READY</span></span>
+                    <span class="links"><a href="/control">Control</a></span>
+                </div>
+                <select id="videoSelector"><option value="">Loading videos...</option></select>
+                <div class="commercial-controls">
+                    <button class="commercial-button" id="startCommercialBtn" onclick="startCommercialBreak()" disabled>Start Break</button>
+                    <button class="commercial-button stop" id="stopCommercialBtn" onclick="stopCommercialBreak()" disabled>Stop Break</button>
+                </div>
+                <div class="muted" id="commercialInfo">No break running</div>
+            </div>
+
+            <!-- ATEM -->
+            <div class="card card-atem">
+                <div class="card-hdr">
+                    <span>ATEM <span class="badge br" id="atemBadge">DISCONNECTED</span></span>
+                    <span class="links"><a href="/control">Control</a></span>
+                </div>
+                <div class="row"><span class="l">IP</span><span class="v" id="atemIp">—</span><span class="l">Program</span><span class="v" id="atemInput">—</span></div>
+                <div class="btn-row" id="atemConnectRow" style="display:none">
+                    <button class="btn btn-o" id="atemConnectBtn" onclick="connectAtem()">Connect to ATEM</button>
+                    <span class="muted">Not connected. Reconnect attempts are logged on the server.</span>
+                </div>
+                <div class="input-buttons">
+                    <button class="input-button graphics" data-input="1" onclick="switchInput(1)">Graphics</button>
+                    <button class="input-button" data-input="2" onclick="switchInput(2)">2</button>
+                    <button class="input-button" data-input="3" onclick="switchInput(3)">3</button>
+                    <button class="input-button" data-input="4" onclick="switchInput(4)">4</button>
+                    <button class="input-button" data-input="5" onclick="switchInput(5)">5</button>
+                    <button class="input-button" data-input="6" onclick="switchInput(6)">6</button>
+                </div>
+                <div class="key-controls">
+                    <button class="key-button" id="downstreamKeyBtn" onclick="socket.emit('atemToggleDownstreamKey')">DSK: OFF</button>
+                    <button class="key-button" id="upstreamKeyBtn" onclick="socket.emit('atemToggleUpstreamKey')">USK: OFF</button>
+                    <button class="key-button" id="startBarsBtn" onclick="socket.emit('atemStartBars')">Start Bars</button>
+                </div>
+            </div>
+
+            <!-- Score Sync -->
+            <div class="card card-sync">
+                <div class="card-hdr">
+                    <span>Score Sync</span>
+                    <span class="links"><a href="/bracket">Configure</a><a href="/teams">Teams</a></span>
+                </div>
+                <div id="syncRows"></div>
+            </div>
+
+            <!-- Stream Output -->
+            <div class="card card-stream">
+                <div class="card-hdr">
+                    <span>Stream Output <span class="badge bx" id="modeBadge">…</span></span>
+                    <span class="links"><a href="/network">Network</a></span>
+                </div>
+                <div class="line col">
+                    <span class="nm">SRT Relay (cloud) <span class="badge bx" id="srtModeBadge">—</span> <span class="badge bx" id="srtPushBadge">—</span></span>
+                    <span class="st" id="srtInfo">—</span>
+                </div>
+                <div class="line col">
+                    <span class="nm">RTMP Direct push <span class="badge bx" id="rtmpModeBadge">—</span></span>
+                    <span class="st" id="rtmpInfo">—</span>
+                </div>
+                <div class="logline" id="srtLog"></div>
+                <div class="btn-row">
+                    <button class="btn btn-g" id="modeBtnSrt" onclick="setRelayMode('srt')">Cloud relay (SRT)</button>
+                    <button class="btn btn-g" id="modeBtnRtmp" onclick="setRelayMode('rtmp')">Direct push (YouTube)</button>
+                    <span class="muted" id="modeStatus"></span>
+                </div>
+            </div>
+
+            <!-- Uplinks -->
+            <div class="card card-uplinks span2">
+                <div class="card-hdr">
+                    <span>Uplinks <span class="badge bx" id="speedifyStateBadge">SPEEDIFY —</span> <span id="streamHealthFlags"></span></span>
+                    <span class="links"><a href="/network">Network</a><a href="/apchannel">AP Channel</a><button class="btn btn-g" style="padding:3px 8px" onclick="refreshUplinks()">Refresh</button></span>
+                </div>
+                <div class="row">
+                    <span class="l">Server</span><span class="v" id="spServer">—</span>
+                    <span class="l">Mode</span><span class="v" id="spMode">—</span>
+                    <span class="l">Public IP</span><span class="v" id="spIp">—</span>
+                    <span class="l">AP</span><span class="v" id="apChannel">—</span>
+                    <span class="l">iPhones</span><span class="v" id="iphones">—</span>
+                </div>
+                <div class="adapters" id="adapterCards"><span class="muted">Waiting for Speedify stats…</span></div>
+                <div class="ifaces" id="interfaceList"></div>
+            </div>
+
+            <!-- Pages -->
+            <div class="card card-pages">
+                <div class="card-hdr"><span>Pages</span></div>
+                <div class="pages">
+                    <a href="/control">Control<small>Scores, colors, scorebug, ATEM, breaks</small></a>
+                    <a href="/bracket">Schedule<small>Matchups and sync provider config</small></a>
+                    <a href="/teams">Teams<small>Roster from the active provider</small></a>
+                    <a href="/ladder" target="_blank">Ladder ↗<small>Bracket ladder, show on stream</small></a>
+                    <a href="/display" target="_blank">Display ↗<small>Kiosk output (ATEM HDMI)</small></a>
+                    <a href="/display-legacy" target="_blank">Display legacy ↗<small>Older SVG scorebug fallback</small></a>
+                    <a href="/overlay-editor" target="_blank">Overlay Editor ↗<small>Scorebug design, logos, versions</small></a>
+                    <a href="/network">Network<small>Stream output, Speedify, Wi-Fi, iPhones</small></a>
+                    <a href="/apchannel">AP Channel<small>switcher_net 5 GHz channel</small></a>
+                    <a href="/bracket-viewer/challonge" target="_blank">Challonge Data ↗<small>Raw bracket and participants</small></a>
+                    <a href="/bracket-viewer/podium" target="_blank">Podium Data ↗<small>Raw bracket and participants</small></a>
+                    <a href="/bracket-viewer/shufflepolo" target="_blank">Shufflepolo Data ↗<small>Raw bracket and participants</small></a>
+                    <a href="http://10.42.0.1:8000/" target="_blank">Companion ↗<small>Bitfocus Companion keypad</small></a>
+                </div>
+            </div>
+
+        </div>
+    </div>
+    <div class="toast" id="toast"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/scorebug-render.js"></script>
+    <script>
+        const socket = io();
+        const $ = (id) => document.getElementById(id);
+
+        // ---------------------------------------------------------------- helpers
+        function esc(s) { if (s == null) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+        let toastTimer;
+        function showToast(m) { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3000); }
+        function setBadge(el, text, cls) { el.textContent = text; el.className = 'badge ' + cls; }
+        function fmtAge(iso) {
+            if (!iso) return '';
+            const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+            if (isNaN(s)) return iso;
+            if (s < 60) return s + 's ago';
+            if (s < 3600) return Math.floor(s / 60) + 'm ago';
+            return Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm ago';
+        }
+        function mmss(sec) { sec = Math.max(0, Math.floor(sec)); return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); }
+
+        // Socket request with a timeout: a handler that was never registered
+        // on the server never calls back, so every one-shot query resolves to
+        // {error:'timeout'} instead of hanging a card forever.
+        function ask(ev, payload, ms = 8000) {
+            return new Promise((resolve) => {
+                const args = payload === undefined ? [] : [payload];
+                socket.timeout(ms).emit(ev, ...args, (err, res) => {
+                    if (err) return resolve({ error: 'timeout' });
+                    resolve(res || { error: 'empty reply' });
+                });
+            });
+        }
+
+        // Polling scheduler: everything not pushed over the socket is polled on
+        // an interval, and all of it pauses while the tab is hidden so a
+        // background dashboard stops shelling out on the Pi.
+        const pollers = [];
+        let polling = false;
+        function poll(fn, ms) { pollers.push({ fn, ms, timer: null }); }
+        function startPolling() {
+            if (polling) return;
+            polling = true;
+            pollers.forEach(p => { p.fn(); p.timer = setInterval(p.fn, p.ms); });
+        }
+        function stopPolling() {
+            polling = false;
+            pollers.forEach(p => { clearInterval(p.timer); p.timer = null; });
+        }
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) stopPolling();
+            else if (socket.connected) startPolling();
+        });
+
+        // ---------------------------------------------------------------- socket
+        let lastGameState = null;
+        let serverInstanceId = null;
+
+        socket.on('connect', () => {
+            $('status').textContent = 'Connected';
+            $('status').className = 'status connected';
+            loadOnce();
+            if (!document.hidden) startPolling();
+        });
+        socket.on('disconnect', () => {
+            $('status').textContent = 'Disconnected';
+            $('status').className = 'status disconnected';
+            stopPolling();
+        });
+
+        socket.on('gameUpdate', (gs) => {
+            if (serverInstanceId && gs._serverInstanceId && gs._serverInstanceId !== serverInstanceId) {
+                $('status').textContent = 'Server restarted, reloading data…';
+                loadOnce();
+                setTimeout(() => { if (socket.connected) $('status').textContent = 'Connected'; }, 1500);
+            }
+            serverInstanceId = gs._serverInstanceId || serverInstanceId;
+            const prevIdx = lastGameState ? lastGameState.loadedMatchupIndex : undefined;
+            gs._clockAnchorAt = Date.now();
+            lastGameState = gs;
+            renderGame(gs);
+            renderDisplay(gs);
+            renderCommercial(gs);
+            renderAtem(gs);
+            if (gs.loadedMatchupIndex !== prevIdx) loadBracket();
+        });
+
+        // One-shot loaders: run on connect and after a server restart.
+        function loadOnce() {
+            loadScorebugs();
+            loadVideos();
+            loadStreamDest();
+            loadSpeedifySettings();
+        }
+
+        // ---------------------------------------------------------------- Game
+        function renderGame(gs) {
+            $('leftTeam').textContent = gs.leftTeam || 'Left';
+            $('rightTeam').textContent = gs.rightTeam || 'Right';
+            $('leftSwatch').style.background = gs.leftColor || '#444';
+            $('rightSwatch').style.background = gs.rightColor || '#444';
+            $('leftScore').textContent = gs.leftScore ?? 0;
+            $('rightScore').textContent = gs.rightScore ?? 0;
+
+            const live = !!(gs.has_game || gs.clock);
+            setBadge($('gameBadge'), live ? (gs.status || 'live') : 'no live game', live ? 'bg' : 'bx');
+
+            const meta = [];
+            if (gs.sidesSwapped) meta.push(['Sides', 'swapped']);
+            const lp = (gs.penalties && gs.penalties.left || []).length, rp = (gs.penalties && gs.penalties.right || []).length;
+            if (lp || rp) meta.push(['Penalties', lp + ' - ' + rp]);
+            const lt = gs.timeouts && gs.timeouts.left, rt = gs.timeouts && gs.timeouts.right;
+            if (lt != null || rt != null) meta.push(['Timeouts', (lt ?? 0) + ' - ' + (rt ?? 0)]);
+            if (gs.activeTimeout && gs.activeTimeout.side) meta.push(['Timeout', gs.activeTimeout.side + ' ' + mmss(gs.activeTimeout.remainingSeconds || 0)]);
+            $('gameMeta').innerHTML = meta.map(([l, v]) => `<span class="l">${esc(l)}</span><span class="v">${esc(v)}</span>`).join('');
+            tickClock();
+        }
+
+        function tickClock() {
+            const gs = lastGameState;
+            const el = $('clock');
+            if (!gs || !gs.clock) { el.textContent = '--:--'; el.className = 'clock stopped'; $('clockSub').textContent = ''; return; }
+            const r = computeClockDisplay({ ...gs.clock, localAnchorAt: gs._clockAnchorAt });
+            el.textContent = r.text;
+            el.className = 'clock' + (r.stopped ? ' stopped' : '');
+            $('clockSub').textContent = r.stopped ? 'stopped' : 'running';
+        }
+        setInterval(() => { if (!document.hidden) tickClock(); }, 1000);
+
+        function updateScore(side, change) { socket.emit('updateScore', { side, change }); }
+        function swapSides() { socket.emit('swapSides'); }
+        function resetGame() { if (confirm('Reset scores to 0-0?')) socket.emit('resetGame'); }
+        async function navigateGame(direction) {
+            // The REST variant reports "No bracket saved" / "No next matchup";
+            // the socket handler discards that result.
+            try {
+                const res = await fetch(direction > 0 ? '/api/next-game' : '/api/prev-game', { method: 'POST' });
+                const data = await res.json();
+                if (!data.ok) showToast(data.error || 'Could not navigate');
+            } catch (e) { showToast('Navigate failed: ' + e.message); }
+        }
+
+        // Now playing / up next from bracket.json. loadedMatchupIndex indexes
+        // the raw matchups array, which includes {group} header rows.
+        function matchupLabel(m, matchups, i) {
+            let group = '';
+            for (let j = i; j >= 0; j--) if (matchups[j].group) { group = matchups[j].group; break; }
+            const num = matchups.slice(0, i + 1).filter(x => !x.group).length;
+            const t = m.time ? ' · ' + m.time : '';
+            return `#${num}${group ? ' ' + group : ''}: ${m.left || 'TBD'} vs ${m.right || 'TBD'}${t}`;
+        }
+        async function loadBracket() {
+            const np = $('nowPlaying'), un = $('upNext');
+            try {
+                const res = await fetch('/api/bracket');
+                if (res.status === 404) { np.textContent = 'No schedule saved'; un.textContent = '—'; return; }
+                const bracket = await res.json();
+                const ms = (bracket && bracket.matchups) || [];
+                const gs = lastGameState || {};
+                let idx = gs.loadedMatchupIndex;
+                if (idx == null || idx < 0 || !ms.length) {
+                    np.textContent = ms.length ? 'No game loaded' : 'Schedule is empty';
+                    np.className = 'st';
+                } else {
+                    idx = Math.min(idx, ms.length - 1);
+                    np.textContent = ms[idx].group ? ms[idx].group : matchupLabel(ms[idx], ms, idx);
+                    np.className = 'st ok';
+                }
+                let next = null;
+                const start = (idx == null || idx < 0) ? 0 : idx + 1;
+                for (let i = start; i < ms.length; i++) if (!ms[i].group) { next = i; break; }
+                un.textContent = next == null ? 'End of schedule' : matchupLabel(ms[next], ms, next);
+            } catch (e) {
+                np.textContent = 'Schedule unavailable';
+            }
+        }
+        poll(loadBracket, 30000);
+
+        // ---------------------------------------------------------------- Display
+        const scorebugSelector = $('scorebugSelector');
+        async function loadScorebugs() {
+            try {
+                const [presets, overlays] = await Promise.all([
+                    fetch('/api/presets').then(r => r.json()),
+                    fetch('/api/overlays').then(r => r.json()),
+                ]);
+                scorebugSelector.innerHTML = '<option value="">Default (built-in fallback)</option>';
+                if (presets.length) {
+                    const g = document.createElement('optgroup'); g.label = 'Presets';
+                    presets.forEach(p => { const o = document.createElement('option'); o.value = 'preset:' + p.id; o.textContent = p.name; g.appendChild(o); });
+                    scorebugSelector.appendChild(g);
+                }
+                const g = document.createElement('optgroup'); g.label = 'Overlays';
+                overlays.forEach(ov => { const o = document.createElement('option'); o.value = 'overlay:' + ov.id; o.textContent = ov.name; g.appendChild(o); });
+                scorebugSelector.appendChild(g);
+                if (lastGameState) renderDisplay(lastGameState);
+            } catch (e) { console.error('scorebug list failed', e); }
+        }
+        scorebugSelector.addEventListener('change', () => {
+            const [kind, id] = scorebugSelector.value ? scorebugSelector.value.split(':') : [null, null];
+            socket.emit('setActive', { kind, id: id || null });
+        });
+        $('debugOverlayToggle').addEventListener('change', (e) => socket.emit('setDebugOverlay', { enabled: e.target.checked }));
+        $('scorebugHideBtn').addEventListener('click', () => {
+            const hide = !(lastGameState && lastGameState.scorebugHidden);
+            socket.emit('setScorebugHidden', { hidden: hide });
+            showToast(hide ? 'Scorebug hidden from stream' : 'Scorebug back on stream');
+        });
+
+        function renderDisplay(gs) {
+            const want = gs.activeId ? (gs.activeKind + ':' + gs.activeId) : '';
+            if (scorebugSelector.value !== want) scorebugSelector.value = want;
+            const st = $('scorebugStatus');
+            const hidden = !!gs.scorebugHidden;
+            const opt = scorebugSelector.options[scorebugSelector.selectedIndex];
+            const name = gs.activeId ? ((opt && opt.value === want) ? opt.textContent : gs.activeId) : 'built-in fallback layout';
+            st.classList.toggle('hidden-off', hidden);
+            if (hidden) {
+                st.textContent = '○ Hidden - nothing on display (' + name + ' selected)';
+                st.classList.remove('active');
+            } else if (gs.activeId) {
+                st.textContent = '● Live: ' + name;
+                st.classList.add('active');
+            } else {
+                st.textContent = 'Nothing active - showing built-in fallback layout';
+                st.classList.remove('active');
+            }
+            const hb = $('scorebugHideBtn');
+            hb.textContent = hidden ? 'Show scorebug on stream' : 'Hide scorebug from stream';
+            hb.className = 'btn ' + (hidden ? 'btn-r' : 'btn-g');
+            const dbg = $('debugOverlayToggle');
+            if (dbg.checked !== !!gs.debugOverlay) dbg.checked = !!gs.debugOverlay;
+            const ladder = gs.ladder || {};
+            setBadge($('ladderBadge'), ladder.active ? 'LADDER ON AIR' : 'ladder off', ladder.active ? 'bp' : 'bx');
+            const b = $('ladderBtn');
+            b.textContent = ladder.active ? 'Hide ladder from stream' : 'Show ladder on stream';
+            b.className = 'btn ' + (ladder.active ? 'btn-r' : 'btn-b');
+        }
+        function toggleLadder() {
+            const ladder = (lastGameState && lastGameState.ladder) || {};
+            socket.emit('setLadder', { active: !ladder.active, tournament: ladder.tournament || null });
+        }
+
+        // ---------------------------------------------------------------- Commercial break
+        const videoSelector = $('videoSelector');
+        async function loadVideos() {
+            try {
+                const videos = await fetch('/api/videos').then(r => r.json());
+                videoSelector.innerHTML = '';
+                if (!videos.length) {
+                    videoSelector.innerHTML = '<option value="" disabled>No videos found (add MP4 files to public/videos/)</option>';
+                } else {
+                    videoSelector.innerHTML = '<option value="">Select a video...</option>';
+                    videos.forEach(v => { const o = document.createElement('option'); o.value = v.path; o.textContent = v.name; videoSelector.appendChild(o); });
+                }
+            } catch (e) { videoSelector.innerHTML = '<option value="" disabled>Error loading videos</option>'; }
+            if (lastGameState) renderCommercial(lastGameState);
+        }
+        videoSelector.addEventListener('change', () => { if (lastGameState) renderCommercial(lastGameState); });
+        function startCommercialBreak() { if (videoSelector.value) socket.emit('startCommercialBreak', { videoPath: videoSelector.value }); }
+        function stopCommercialBreak() { socket.emit('stopCommercialBreak'); }
+        function renderCommercial(gs) {
+            const cb = gs.commercialBreak || {};
+            setBadge($('commercialBadge'), cb.active ? 'PLAYING' : 'READY', cb.active ? 'bp' : 'bx');
+            $('startCommercialBtn').disabled = cb.active || !videoSelector.value;
+            $('stopCommercialBtn').disabled = !cb.active;
+            videoSelector.disabled = !!cb.active;
+            if (cb.active && cb.videoPath && videoSelector.value !== cb.videoPath) {
+                if ([...videoSelector.options].some(o => o.value === cb.videoPath)) videoSelector.value = cb.videoPath;
+            }
+            tickCommercial();
+        }
+        function tickCommercial() {
+            const cb = (lastGameState && lastGameState.commercialBreak) || {};
+            const info = $('commercialInfo');
+            if (!cb.active) { info.textContent = lastGameState && lastGameState.barsActive ? 'Bars are on air' : 'No break running'; return; }
+            const name = (cb.videoPath || '').split('/').pop();
+            const started = cb.startTime ? new Date(cb.startTime).getTime() : null;
+            info.textContent = name + (started ? ' · ' + mmss((Date.now() - started) / 1000) + ' elapsed' : '');
+        }
+        setInterval(() => { if (!document.hidden) tickCommercial(); }, 1000);
+
+        // ---------------------------------------------------------------- ATEM
+        function connectAtem() {
+            $('atemConnectBtn').disabled = true;
+            socket.emit('atemConnect');
+            showToast('Connecting to ATEM…');
+            setTimeout(() => { $('atemConnectBtn').disabled = false; }, 5000);
+        }
+        function switchInput(n) { socket.emit('atemSwitchInput', { input: n }); }
+        function renderAtem(gs) {
+            const a = gs.atemStatus || {};
+            const on = !!a.connected;
+            setBadge($('atemBadge'), on ? 'CONNECTED' : 'DISCONNECTED', on ? 'bg' : 'br');
+            $('atemIp').textContent = a.ip || '—';
+            $('atemInput').textContent = on && a.currentInput ? (a.currentInput === 1 ? '1 (Graphics)' : String(a.currentInput)) : '—';
+            $('atemConnectRow').style.display = on ? 'none' : '';
+            document.querySelectorAll('.input-button').forEach(b => {
+                b.disabled = !on;
+                b.classList.toggle('active', on && Number(b.dataset.input) === a.currentInput);
+            });
+            const dsk = $('downstreamKeyBtn'), usk = $('upstreamKeyBtn'), bars = $('startBarsBtn');
+            dsk.disabled = usk.disabled = !on;
+            dsk.textContent = 'DSK: ' + (a.downstreamKeyEnabled ? 'ON' : 'OFF');
+            dsk.className = 'key-button' + (a.downstreamKeyEnabled ? ' active' : '');
+            usk.textContent = 'USK: ' + (a.upstreamKeyEnabled ? 'ON' : 'OFF');
+            usk.className = 'key-button' + (a.upstreamKeyEnabled ? ' active' : '');
+            bars.disabled = !on || !!(gs.commercialBreak && gs.commercialBreak.active);
+            bars.textContent = gs.barsActive ? 'Stop Bars' : 'Start Bars';
+            bars.className = 'key-button' + (gs.barsActive ? ' active' : '');
+        }
+
+        // ---------------------------------------------------------------- Score sync
+        // Same status wording as bracket.html's SYNC_PROVIDERS.formatStatus.
+        const SYNC_PROVIDERS = [
+            { key: 'challonge', label: 'Challonge', fmt(s) {
+                if (s.state === 'error') return ['err', 'Error: ' + (s.last_error || 'unknown error')];
+                if (s.last_poll_at) return ['ok', 'Last synced ' + fmtAge(s.last_poll_at)];
+                return ['', 'Not started'];
+            } },
+            { key: 'podium', label: 'Podium', fmt(s) {
+                if (s.state === 'error') return ['err', 'Error: ' + (s.last_error || 'unknown error')];
+                if (s.connected) return ['ok', 'Live — last event ' + (s.last_event_at ? fmtAge(s.last_event_at) : 'n/a')];
+                return ['', 'Not started'];
+            } },
+            { key: 'shufflepolo', label: 'Shufflepolo', fmt(s) {
+                if (s.state === 'error') return ['err', 'Error: ' + (s.last_error || 'unknown error')];
+                if (s.connected) return ['ok', 'Live — last read ' + (s.last_poll_at ? fmtAge(s.last_poll_at) : 'n/a')];
+                return ['', 'Not started'];
+            } },
+        ];
+        const syncState = {};
+        $('syncRows').innerHTML = SYNC_PROVIDERS.map(p => `
+            <div class="line" style="margin-bottom:6px">
+                <label class="toggle" title="Enable ${p.label} sync"><input type="checkbox" id="sync-${p.key}-toggle" data-provider="${p.key}"><span class="toggle-slider"></span></label>
+                <span class="nm">${p.label} <a href="/bracket-viewer/${p.key}" target="_blank" style="color:#4f8cff;font-size:11px;font-weight:400;text-decoration:none">data ↗</a></span>
+                <span class="st" id="sync-${p.key}-status">…</span>
+                ${p.key === 'shufflepolo' ? '<button class="btn btn-g" style="padding:4px 8px" onclick="resyncShufflepolo()" title="Full re-read and push">Resync</button>' : ''}
+            </div>`).join('');
+
+        async function loadSync() {
+            await Promise.all(SYNC_PROVIDERS.map(async (p) => {
+                const tgl = $(`sync-${p.key}-toggle`), st = $(`sync-${p.key}-status`);
+                try {
+                    const [cfg, status] = await Promise.all([
+                        fetch(`/api/sync/${p.key}/config`).then(r => r.json()),
+                        fetch(`/api/sync/${p.key}/status`).then(r => r.json()),
+                    ]);
+                    syncState[p.key] = { cfg, status };
+                    if (!tgl.disabled && tgl.checked !== !!cfg.enabled) tgl.checked = !!cfg.enabled;
+                    let [cls, text] = p.fmt(status || {});
+                    if (cfg.enabled && !status.connected && !status.last_poll_at && status.state !== 'error') { cls = 'warn'; text = status.state === 'starting' ? 'Starting… (or configure on Schedule)' : 'Enabled but not running — configure on Schedule'; }
+                    if (!cfg.enabled) { cls = ''; text = 'Disabled'; }
+                    st.textContent = text; st.className = 'st ' + cls;
+                } catch (e) { st.textContent = 'Unavailable'; st.className = 'st err'; }
+            }));
+        }
+        poll(loadSync, 15000);
+
+        document.querySelectorAll('#syncRows input[type=checkbox]').forEach(tgl => {
+            tgl.addEventListener('change', async () => {
+                const provider = tgl.dataset.provider, enabled = tgl.checked;
+                const cur = syncState[provider] || {};
+                if (!enabled && cur.status && cur.status.connected && provider !== 'challonge') {
+                    if (!confirm(`Disable ${provider} sync? The live clock and penalties are cleared from the scoreboard.`)) { tgl.checked = true; return; }
+                }
+                tgl.disabled = true;
+                const res = await ask('toggleSync', { provider, enabled }, 15000);
+                tgl.disabled = false;
+                if (res.error) { showToast('Toggle failed: ' + res.error); tgl.checked = !enabled; }
+                else showToast(`${provider} sync ${enabled ? 'enabled' : 'disabled'}`);
+                loadSync();
+                setTimeout(loadBracket, 2000);
+            });
+        });
+        async function resyncShufflepolo() {
+            try {
+                const r = await fetch('/api/sync/shufflepolo/resync', { method: 'POST' }).then(r => r.json());
+                showToast(r.ok ? 'Resync requested' : 'Resync failed' + (r.error ? ': ' + r.error : ''));
+            } catch (e) { showToast('Resync failed: ' + e.message); }
+        }
+
+        // ---------------------------------------------------------------- Stream output
+        function renderRelayMode(mode) {
+            const srt = mode === 'srt', rtmp = mode === 'rtmp';
+            setBadge($('modeBadge'), srt ? 'CLOUD RELAY' : rtmp ? 'DIRECT PUSH' : 'UNKNOWN', (srt || rtmp) ? 'bg' : 'br');
+            $('modeBtnSrt').className = 'btn ' + (srt ? 'btn-p' : 'btn-g');
+            $('modeBtnRtmp').className = 'btn ' + (rtmp ? 'btn-p' : 'btn-g');
+            setBadge($('srtModeBadge'), srt ? 'ACTIVE' : 'STANDBY', srt ? 'bg' : 'bx');
+            setBadge($('rtmpModeBadge'), rtmp ? 'ACTIVE' : 'STANDBY', rtmp ? 'bg' : 'bx');
+        }
+        async function loadSrtStatus() {
+            const res = await ask('getSrtRelayStatus');
+            if (res.error) { setBadge($('modeBadge'), '—', 'bx'); $('srtInfo').textContent = res.error; $('srtInfo').className = 'st err'; return; }
+            renderRelayMode(res.mode);
+            setBadge($('srtPushBadge'), res.pushRunning ? 'PUSHING' : 'IDLE', res.pushRunning ? 'bg' : 'bx');
+            $('srtInfo').textContent = (res.relay || '') + (res.passphraseSet ? '' : ' · no passphrase set');
+            $('srtInfo').className = 'st ' + (res.passphraseSet ? '' : 'warn');
+            const log = (res.log || []).filter(Boolean);
+            $('srtLog').textContent = log.length ? log[log.length - 1] : '';
+        }
+        poll(loadSrtStatus, 30000);
+        async function loadStreamDest() {
+            const res = await ask('getNginxStreamDest');
+            const el = $('rtmpInfo');
+            if (res.error) { el.textContent = res.error; el.className = 'st err'; return; }
+            // The server hands over the real stream key: show only its tail.
+            const key = res.streamKey || '';
+            el.textContent = (res.baseUrl || '') + (key ? '/…' + key.slice(-4) : ' · no key');
+            el.className = 'st';
+        }
+        async function setRelayMode(mode) {
+            const label = mode === 'srt' ? 'the cloud relay (SRT)' : 'direct YouTube push';
+            if (!confirm(`Switch stream output to ${label}?\n\nThis restarts nginx. The ATEM reconnects by itself, with a short gap on air.`)) return;
+            const st = $('modeStatus');
+            $('modeBtnSrt').disabled = $('modeBtnRtmp').disabled = true;
+            st.innerHTML = '<span class="spinner"></span>Switching, restarting nginx…';
+            const res = await ask('setRelayMode', { mode }, 40000);
+            $('modeBtnSrt').disabled = $('modeBtnRtmp').disabled = false;
+            if (res.error) { st.textContent = 'Error: ' + res.error; st.style.color = '#f44336'; }
+            else { st.textContent = 'Switched. nginx restarted.'; st.style.color = '#4caf50'; }
+            loadSrtStatus();
+            setTimeout(() => { st.textContent = ''; }, 8000);
+        }
+
+        // ---------------------------------------------------------------- Uplinks
+        let adapterData = {};        // speedify_cli show adapters: name, isp, priority, state
+        let adapterLiveStats = {};   // aggregated connection_stats per adapterID
+        let lastStreamingStats = null;
+        let renderQueued = false;
+
+        socket.on('speedifyStats', (data) => {
+            if (document.hidden) return;
+            if (data.type === 'connection_stats' && data.connections) {
+                const byAdapter = {};
+                data.connections.forEach(c => {
+                    const id = c.adapterID;
+                    if (!byAdapter[id]) byAdapter[id] = { ...c, sendBps: 0, receiveBps: 0, anyConnected: false };
+                    byAdapter[id].sendBps += (c.sendBps || 0);
+                    byAdapter[id].receiveBps += (c.receiveBps || 0);
+                    if (c.connected) byAdapter[id].anyConnected = true;
+                    if (c.protocol === 'tcp') {
+                        byAdapter[id].latencyMs = c.latencyMs;
+                        byAdapter[id].lossReceive = c.lossReceive;
+                        byAdapter[id].mos = c.mos;
+                        byAdapter[id].sendEstimateMbps = c.sendEstimateMbps;
+                    }
+                });
+                Object.keys(byAdapter).forEach(id => { adapterLiveStats[id] = byAdapter[id]; });
+                queueAdapterRender();
+            } else if (data.type === 'streaming_stats') {
+                lastStreamingStats = data;
+                $('streamHealthFlags').innerHTML = [['CPU', data.badCpu], ['Lat', data.badLatency], ['Loss', data.badLoss], ['Mem', data.badMemory]]
+                    .map(([l, b]) => `<span class="hf ${b ? 'bad' : ''}">${l}:${b ? 'BAD' : 'OK'}</span>`).join('');
+            }
+        });
+        function queueAdapterRender() {
+            if (renderQueued) return;
+            renderQueued = true;
+            setTimeout(() => { renderQueued = false; renderAdapterCards(); }, 500);
+        }
+        function renderAdapterCards() {
+            const ids = new Set([...Object.keys(adapterData), ...Object.keys(adapterLiveStats)]);
+            ids.delete('speedify');
+            if (!ids.size) return;
+            let html = '';
+            ids.forEach(id => {
+                const info = adapterData[id] || {}, live = adapterLiveStats[id] || {};
+                const on = live.anyConnected || (info.state === 'connected' && !info.offline);
+                const dn = live.receiveBps != null ? (live.receiveBps * 8 / 1e6).toFixed(1) : '--';
+                const up = live.sendBps != null ? (live.sendBps * 8 / 1e6).toFixed(1) : '--';
+                const lat = live.latencyMs != null ? Math.round(live.latencyMs) : '--';
+                const loss = live.lossReceive != null ? (live.lossReceive * 100).toFixed(1) : '--';
+                const mos = live.mos != null ? live.mos.toFixed(2) : '--';
+                const mc = live.mos != null ? (live.mos > 4 ? 'mg' : live.mos > 3 ? 'my' : 'mr') : '';
+                html += `<div class="ac ${on ? 'on' : 'off'}">
+                    <div class="ac-hdr"><span class="ac-name">${esc(info.name || id)}</span>${info.isp ? `<span class="ac-isp">${esc(info.isp)}</span>` : ''}<span class="ac-isp">${esc(info.priority || '')}</span></div>
+                    <div class="sg">
+                        <div class="si"><div class="k">Down</div><div class="n sm">${dn}<span class="u"> Mbps</span></div></div>
+                        <div class="si"><div class="k">Up</div><div class="n sm">${up}<span class="u"> Mbps</span></div></div>
+                        <div class="si"><div class="k">Latency</div><div class="n sm">${lat}<span class="u"> ms</span></div></div>
+                        <div class="si"><div class="k">Loss</div><div class="n sm">${loss}<span class="u">%</span></div></div>
+                        <div class="si"><div class="k">MOS</div><div class="n sm ${mc}">${mos}</div></div>
+                    </div></div>`;
+            });
+            $('adapterCards').innerHTML = html;
+        }
+
+        async function loadSpeedifyState() {
+            const [state, server] = await Promise.all([ask('getSpeedifyState'), ask('getSpeedifyServer')]);
+            const b = $('speedifyStateBadge');
+            if (state.error) setBadge(b, 'SPEEDIFY —', 'bx');
+            else {
+                const s = typeof state.data === 'string' ? state.data : (state.data.state || JSON.stringify(state.data));
+                setBadge(b, 'SPEEDIFY ' + s, s === 'CONNECTED' ? 'bg' : s === 'DISCONNECTED' ? 'br' : 'by');
+            }
+            if (!server.error && server.data) {
+                const d = server.data;
+                $('spServer').textContent = (d.friendlyName || d.tag || '—') + (d.city ? ` (${d.city})` : '');
+                $('spIp').textContent = d.publicIP || '—';
+            }
+        }
+        async function loadSpeedifyAdapters() {
+            const res = await ask('getSpeedifyAdapters');
+            if (res.error || !Array.isArray(res.data)) return;
+            res.data.forEach(a => { adapterData[a.adapterID] = a; });
+            renderAdapterCards();
+        }
+        async function loadSpeedifySettings() {
+            const res = await ask('getSpeedifySettings');
+            if (!res.error && res.data) $('spMode').textContent = res.data.bondingMode || res.data.mode || '—';
+        }
+        async function loadIphones() {
+            const res = await ask('getIphones', undefined, 20000);
+            const el = $('iphones');
+            if (res.error) { el.textContent = '—'; return; }
+            const phones = res.phones || [];
+            const on = phones.filter(p => p.connected);
+            el.textContent = `${on.length}/${phones.length}` + (on.length ? ' (' + on.map(p => p.name).join(', ') + ')' : '');
+        }
+        async function loadInterfaces() {
+            const res = await ask('getInterfaces');
+            const el = $('interfaceList');
+            if (res.error) { el.innerHTML = ''; return; }
+            el.innerHTML = (res.interfaces || []).map(i => {
+                const c = i.state && i.state.includes('connected') && i.connection;
+                return `<span class="iface ${c ? 'c' : ''}" title="${esc(i.type)} · ${esc(i.state)}">${esc(i.device)}${c ? ' · ' + esc(i.connection) : ''}</span>`;
+            }).join('');
+        }
+        async function loadApConfig() {
+            const res = await ask('getApConfig');
+            $('apChannel').textContent = res.error ? '—' : 'Ch ' + res.channel;
+            $('apChannel').title = res.htCapab || '';
+        }
+        poll(loadSpeedifyState, 30000);
+        poll(loadSpeedifyAdapters, 60000);
+        poll(loadInterfaces, 30000);
+        poll(loadIphones, 60000);
+        poll(loadApConfig, 300000);
+        function refreshUplinks() { loadSpeedifyState(); loadSpeedifyAdapters(); loadSpeedifySettings(); loadInterfaces(); loadIphones(); loadApConfig(); showToast('Refreshing…'); }
+    </script>
+</body>
+</html>

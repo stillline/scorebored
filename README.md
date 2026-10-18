@@ -28,6 +28,7 @@ display), see [docs/kiosk-display.md](docs/kiosk-display.md).
 
 | URL | Purpose |
 |-----|---------|
+| `/dashboard` | Landing page (`/` redirects here): live status of every area plus the mid-stream actions |
 | `/control` | Main operator control panel |
 | `/display` | Clean scoreboard output (fullscreen/overlay) |
 | `/bracket` | Tournament schedule manager + score-sync provider config |

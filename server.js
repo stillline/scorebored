@@ -477,8 +477,16 @@ for (const manager of Object.values(syncProviders)) {
 
 app.use(express.static('public'));
 
+// The dashboard is the landing page. A redirect (302) rather than a
+// sendFile so the address bar shows the real route; the kiosk's wait loop
+// (`curl -sf http://localhost:3000/`, launch-display.sh) still passes
+// because -f only fails on 4xx/5xx, and Companion only uses the REST routes.
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'control.html'));
+  res.redirect('/dashboard');
+});
+
+app.get('/dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
 app.get('/display', (req, res) => {
@@ -2316,6 +2324,7 @@ io.on('connection', (socket) => {
   registerNetworkSocketHandlers(socket);
   registerRtmpSocketHandlers(socket);
   registerSrtSocketHandlers(socket);
+  registerSpeedifySocketHandlers(socket);
 });
 
 const speedify = startSpeedifyStats(io);
