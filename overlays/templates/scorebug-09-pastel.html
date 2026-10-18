@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scoreboard Bug - Pastel Soft</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@700&display=swap" rel="stylesheet">
+    <style>
+        /*
+         * THEME: Pastel Soft
+         * Restyle only the :root tokens below; every rule reads from them.
+         *
+         * LUMA-KEY RULES
+         * - The body is the ONLY pure black. It gets keyed out.
+         * - Every other color is at or above ~20% Rec.709 luma. The darkest
+         *   token in this theme is --home-text (#4a3a5c, 25%).
+         * - No rgba(0,0,0,x) anywhere. No blurred shadows anywhere.
+         *
+         * STREAM-ENCODING RULES (for anyone restyling this block)
+         * This graphic is keyed over live video and sent through an RTMP
+         * encoder at a modest bitrate over bonded cellular. Tested on a
+         * real stream, subtle styling turns into visible artifacts. Keep
+         * every element inside these limits:
+         * - Flat fills. One solid color per cell, banner and frame. No
+         *   gradients: they band and step under compression.
+         * - No translucency. No rgba overlays, sheens, scanlines, grids or
+         *   glass effects: the encoder cannot hold a subtle alpha blend
+         *   frame to frame and it shimmers.
+         * - No glow. No text-shadow or box-shadow blur: it becomes a halo
+         *   of macroblocks. A hard 2px+ offset shadow in a solid color is
+         *   fine if contrast needs it.
+         * - Nothing thinner than 2px. 1px borders, hairline dividers and
+         *   thin accent bars flicker or vanish. Prefer 3px+.
+         * - Mid-saturation colors. Pure red, magenta and neon bleed at the
+         *   edges because the encoder stores color at half resolution
+         *   (4:2:0). Keep saturation below ~85% and avoid red on dark.
+         * - Text at least 24px, bold, with real contrast against its own
+         *   cell. No letter-spacing tricks, no outlines.
+         * - Keep the body pure black and everything else above ~20% luma
+         *   (LUMA-KEY RULES above still apply).
+         *
+         * STRUCTURE RULES (what a restyle must not change)
+         * - Every data-role / data-side attribute, and the element each one
+         *   sits on. overlay-bind.js finds nodes by data-role and writes
+         *   textContent into them; the team name and score live on inner
+         *   spans so re-renders never touch their sibling banners.
+         * - The banner mechanics: .scorebug-container owning a stacking
+         *   context (position:relative; isolation:isolate), .banner at
+         *   z-index:-1 rooted inside the score cell, width:max-content, and
+         *   the clip-path reveal. Restyle their colors, font and radius;
+         *   do not reposition them or reintroduce fixed widths.
+         * - .banner[data-live-hidden] is the hidden state; the binder
+         *   toggles only that attribute and the text.
+         * - No JavaScript in this block. No external assets except the one
+         *   font link (and keep a system fallback in the font stack: the
+         *   kiosk can be offline at load).
+         * - Fixed pixel sizes, designed at 1920x1080. No vw/vh, no
+         *   animations beyond the banner reveal, no transforms on the
+         *   frame.
+         */
+        :root {
+            --frame:        #b8a2e3;
+            --radius:       12px;
+
+            --home-fill:    #f7c6d0;
+            --home-text:    #4a3a5c;
+            --home-shadow:  none;
+            --home-chip:    #b8a2e3;
+            --home-sfill:   #fffaf2;
+            --home-digits:  #b0507a;
+            --home-bar:     #f2a6b8;
+
+            --away-fill:    #c9e4f2;
+            --away-text:    #4a3a5c;
+            --away-shadow:  none;
+            --away-chip:    #9fd6b8;
+            --away-sfill:   #fffaf2;
+            --away-digits:  #3f7fa0;
+            --away-bar:     #9cc9e6;
+
+            --clock-fill:   #fffaf2;
+            --clock-text:   #4a3a5c;
+            --clock-edge:   #b8a2e3;
+            --clock-bar:    #f2a6b8;
+
+            --timeout-fill: #b8a2e3;
+            --timeout-text: #4a3a5c;
+            --penalty-fill: #ffd59e;
+            --penalty-text: #4a3a5c;
+
+            --font-ui:      'Fredoka', 'Arial Rounded MT Bold', Arial, sans-serif;
+            --font-ui-wt:   700;
+            --font-num:     'Fredoka', 'Arial Rounded MT Bold', Arial, sans-serif;
+            --font-num-wt:  700;
+            --name-case:    none;
+        }
+
+        body {
+            background-color: #000000;   /* keyed out */
+            font-family: var(--font-ui);
+            margin: 50px;
+            display: flex;
+            justify-content: flex-start;
+            align-items: flex-start;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .scorebug-container {
+            display: flex;
+            flex-direction: column;
+            width: fit-content;
+            /* Own stacking context so the banners' z-index:-1 paints behind
+               .scoreboard but above everything outside this container. */
+            position: relative;
+            isolation: isolate;
+        }
+
+        /* ---------- Main frame ----------
+         * Solid fill; the 3px gap + padding show it as dividers. */
+        .scoreboard {
+            display: grid;
+            grid-template-columns: 240px 80px;
+            grid-auto-rows: 44px;
+            gap: 3px;
+            padding: 3px;
+            border-radius: var(--radius);
+            background-color: var(--frame);
+        }
+
+        .row {
+            display: contents;
+        }
+
+        /* ---------- Shared cell ---------- */
+        .cell {
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            box-sizing: border-box;
+            line-height: 1;
+        }
+
+        /* ---------- Team name cells ---------- */
+        .team {
+            justify-content: flex-start;
+            padding-left: 22px;
+        }
+
+        /* data-role="teamName" lives here, not on .cell.team, so
+         * overlay-bind.js's textContent re-render never touches sibling
+         * nodes. shrinkToFit measures/resizes this node. */
+        .team-name {
+            position: relative;
+            z-index: 1;
+            display: block;
+            width: 218px;   /* 240px cell - 22px left padding */
+            overflow: hidden;
+            font-size: 26px;
+            font-weight: var(--font-ui-wt);
+            text-transform: var(--name-case);
+            white-space: nowrap;
+        }
+
+        /* Solid edge chip on the leading edge */
+        .team::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+        }
+
+        .hammers-team {
+            background-color: var(--home-fill);
+            border-top-left-radius: calc(var(--radius) * 0.6);
+        }
+        .hammers-team::before { background-color: var(--home-chip); }
+        .hammers-team .team-name { color: var(--home-text); text-shadow: var(--home-shadow); }
+
+        .pirates-team {
+            background-color: var(--away-fill);
+            border-bottom-left-radius: calc(var(--radius) * 0.6);
+        }
+        .pirates-team::before { background-color: var(--away-chip); }
+        .pirates-team .team-name { color: var(--away-text); text-shadow: var(--away-shadow); }
+
+        /* ---------- Score cells ---------- */
+        .score {
+            justify-content: center;
+            /* Banners anchor to this cell; must not clip them. */
+            overflow: visible;
+        }
+
+        .score-value {
+            position: relative;
+            z-index: 1;
+            font-family: var(--font-num);
+            font-size: 34px;
+            font-weight: var(--font-num-wt);
+            margin-bottom: 2px;                   /* optically center above the base bar */
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Base bar under each score */
+        .score::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 4px;
+            z-index: 1;
+        }
+
+        .hammers-score {
+            background-color: var(--home-sfill);
+            border-top-right-radius: calc(var(--radius) * 0.6);
+        }
+        .hammers-score .score-value { color: var(--home-digits); }
+        .hammers-score::before { background-color: var(--home-bar); }
+
+        .pirates-score {
+            background-color: var(--away-sfill);
+            border-bottom-right-radius: calc(var(--radius) * 0.6);
+        }
+        .pirates-score .score-value { color: var(--away-digits); }
+        .pirates-score::before {
+            background-color: var(--away-bar);
+            border-bottom-right-radius: calc(var(--radius) * 0.6);
+        }
+
+        /* ---------- Clock tab ---------- */
+        .timer-box {
+            position: relative;
+            overflow: hidden;
+            width: 112px;
+            height: 38px;
+            margin-left: 10px;
+            border-radius: 0 0 var(--radius) var(--radius);
+            background-color: var(--clock-fill);
+            box-shadow: inset 0 0 0 3px var(--clock-edge);   /* hard 3px edge, no blur */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .timer-box::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 4px;
+            background-color: var(--clock-bar);
+        }
+
+        .timer-text {
+            position: relative;
+            z-index: 1;
+            font-family: var(--font-num);
+            font-size: 26px;
+            font-weight: var(--font-num-wt);
+            line-height: 1;
+            margin-bottom: 2px;                   /* optically center above the base bar */
+            font-variant-numeric: tabular-nums;
+            color: var(--clock-text);
+        }
+
+        /* ---------- Timeout / penalty banners ----------
+         * Anchored to the right edge of each team's score cell, rooted
+         * 20px inside it and painted behind the frame (z-index:-1 inside
+         * the isolated container). Revealed via clip-path from the frame
+         * side. data-role/data-side stay on THIS element - overlay-bind.js
+         * toggles data-live-hidden on the node it matched.
+         */
+        .banner {
+            position: absolute;
+            left: calc(100% - 20px);
+            top: 3px;
+            bottom: 3px;
+            width: max-content;
+            clip-path: inset(0 100% 0 0);
+            overflow: hidden;
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            white-space: nowrap;
+            /* 20px hidden root + 3px frame edge + 16px visible gap */
+            padding: 0 18px 0 39px;
+            font-family: var(--font-ui);
+            font-size: 24px;
+            font-weight: var(--font-ui-wt);
+            text-transform: var(--name-case);
+            z-index: -1;
+            border-radius: 0 var(--radius) var(--radius) 0;
+            transition: clip-path 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .banner[data-live-hidden] {
+            clip-path: inset(0 100% 0 0);
+        }
+
+        .banner:not([data-live-hidden]) {
+            clip-path: inset(0 0 0 0);
+        }
+
+        .timeout-banner {
+            background-color: var(--timeout-fill);
+            color: var(--timeout-text);
+        }
+        .penalty-banner {
+            background-color: var(--penalty-fill);
+            color: var(--penalty-text);
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="scorebug-container">
+        <!-- Main Scoreboard -->
+        <div class="scoreboard">
+            <!-- Row 1: Hammers -->
+            <div class="row">
+                <div class="cell team hammers-team">
+                    <span class="team-name" data-role="teamName" data-side="left">Hammers</span>
+                </div>
+                <div class="cell score hammers-score">
+                    <span class="score-value" data-role="score" data-side="left">3</span>
+                    <div class="banner timeout-banner" data-role="timeoutBanner" data-side="left" data-live-hidden></div>
+                    <div class="banner penalty-banner" data-role="penaltyBanner" data-side="left" data-live-hidden></div>
+                </div>
+            </div>
+            <!-- Row 2: Pixel Pirates -->
+            <div class="row">
+                <div class="cell team pirates-team">
+                    <span class="team-name" data-role="teamName" data-side="right">Pixel Pirates</span>
+                </div>
+                <div class="cell score pirates-score">
+                    <span class="score-value" data-role="score" data-side="right">1</span>
+                    <div class="banner timeout-banner" data-role="timeoutBanner" data-side="right" data-live-hidden></div>
+                    <div class="banner penalty-banner" data-role="penaltyBanner" data-side="right" data-live-hidden></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Timer Module -->
+        <div class="timer-box">
+            <div class="timer-text" data-role="clock">4:22</div>
+        </div>
+    </div>
+
+</body>
+</html>

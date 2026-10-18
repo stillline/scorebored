@@ -655,12 +655,17 @@
         <div class="scorebug-section">
             <div class="scorebug-header">
                 <span>Scorebug</span>
-                <a href="/editor" target="_blank">Open Editor &rarr;</a>
+                <a href="/overlay-editor" target="_blank">Open Overlay Editor &rarr;</a>
             </div>
             <select class="scorebug-selector" id="scorebugSelector">
                 <option value="">Default (built-in fallback)</option>
             </select>
-            <div class="scorebug-status" id="scorebugStatus">No preset active - showing built-in fallback layout</div>
+            <div class="scorebug-status" id="scorebugStatus">Nothing active - showing built-in fallback layout</div>
+            <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px;color:#ccc;">
+                <input type="checkbox" id="debugOverlayToggle">
+                Show debug panel on display (socket status, render count)
+            </label>
+            <button type="button" id="reloadDisplayBtn" style="margin-top:10px;" title="Reload the display page in place (picks up overlay/code changes without restarting the kiosk browser)">Refresh display page</button>
         </div>
 
         <div class="commercial-section">
@@ -806,53 +811,93 @@
             startCommercialBtn.disabled = !hasVideoSelected;
         }
 
-        // Scorebug preset functionality
+        // Scorebug active-item functionality. The selector's <option> values
+        // are "kind:id" (e.g. "overlay:overlay_abc123") so one flat list can
+        // represent both legacy presets and overlays without the operator
+        // needing to think about which system a given item came from -
+        // picking anything just calls the generic setActive socket event.
+        // Presets are kept here for backward compatibility with anything
+        // saved before /editor was retired, even though there's no page left
+        // to create new ones.
         const scorebugSelector = document.getElementById('scorebugSelector');
         const scorebugStatus = document.getElementById('scorebugStatus');
-        let currentActivePresetId = null;
+        let currentActiveKind = null;
+        let currentActiveId = null;
         let lastGameState = null;
 
-        async function loadAvailablePresets() {
+        async function loadAvailableScorebugs() {
             try {
-                const response = await fetch('/api/presets');
-                const presets = await response.json();
+                const [presetsRes, overlaysRes] = await Promise.all([
+                    fetch('/api/presets'),
+                    fetch('/api/overlays'),
+                ]);
+                const presets = await presetsRes.json();
+                const overlays = await overlaysRes.json();
 
                 scorebugSelector.innerHTML = '<option value="">Default (built-in fallback)</option>';
-                presets.forEach(preset => {
+
+                if (presets.length) {
+                    const presetGroup = document.createElement('optgroup');
+                    presetGroup.label = 'Presets';
+                    presets.forEach(preset => {
+                        const option = document.createElement('option');
+                        option.value = 'preset:' + preset.id;
+                        option.textContent = preset.name;
+                        presetGroup.appendChild(option);
+                    });
+                    scorebugSelector.appendChild(presetGroup);
+                }
+
+                const overlayGroup = document.createElement('optgroup');
+                overlayGroup.label = 'Overlays';
+                overlays.forEach(overlay => {
                     const option = document.createElement('option');
-                    option.value = preset.id;
-                    option.textContent = preset.name;
-                    scorebugSelector.appendChild(option);
+                    option.value = 'overlay:' + overlay.id;
+                    option.textContent = overlay.name;
+                    overlayGroup.appendChild(option);
                 });
-                scorebugSelector.value = currentActivePresetId || '';
+                scorebugSelector.appendChild(overlayGroup);
+
+                scorebugSelector.value = currentActiveId ? (currentActiveKind + ':' + currentActiveId) : '';
                 // The selector just gained its option list - re-resolve the
-                // active preset's display name in case gameUpdate arrived
+                // active item's display name in case gameUpdate arrived
                 // first (selector had no options to match against yet).
                 if (lastGameState) updateScorebugStatus(lastGameState);
             } catch (error) {
-                console.error('Error loading presets:', error);
+                console.error('Error loading scorebugs:', error);
             }
         }
 
         function updateScorebugStatus(gameState) {
             lastGameState = gameState;
-            currentActivePresetId = gameState.activePresetId || null;
-            if (scorebugSelector.value !== (currentActivePresetId || '')) {
-                scorebugSelector.value = currentActivePresetId || '';
+            currentActiveKind = gameState.activeKind || null;
+            currentActiveId = gameState.activeId || null;
+            const selectorValue = currentActiveId ? (currentActiveKind + ':' + currentActiveId) : '';
+            if (scorebugSelector.value !== selectorValue) {
+                scorebugSelector.value = selectorValue;
             }
-            if (currentActivePresetId) {
+            if (currentActiveId) {
                 const selectedOption = scorebugSelector.options[scorebugSelector.selectedIndex];
-                const name = selectedOption ? selectedOption.textContent : currentActivePresetId;
+                const name = selectedOption ? selectedOption.textContent : currentActiveId;
                 scorebugStatus.textContent = '● Live: ' + name;
                 scorebugStatus.classList.add('active');
             } else {
-                scorebugStatus.textContent = 'No preset active - showing built-in fallback layout';
+                scorebugStatus.textContent = 'Nothing active - showing built-in fallback layout';
                 scorebugStatus.classList.remove('active');
             }
         }
 
         scorebugSelector.addEventListener('change', () => {
-            socket.emit('setActivePreset', { presetId: scorebugSelector.value || null });
+            const [kind, id] = scorebugSelector.value ? scorebugSelector.value.split(':') : [null, null];
+            socket.emit('setActive', { kind, id: id || null });
+        });
+
+        document.getElementById('reloadDisplayBtn').addEventListener('click', () => {
+            socket.emit('reloadDisplay');
+        });
+        const debugOverlayToggle = document.getElementById('debugOverlayToggle');
+        debugOverlayToggle.addEventListener('change', () => {
+            socket.emit('setDebugOverlay', { enabled: debugOverlayToggle.checked });
         });
 
         function startCommercialBreak() {
@@ -1094,6 +1139,13 @@
 
             // Update scorebug preset status
             updateScorebugStatus(gameState);
+
+            // Sync the debug-panel checkbox without fighting the operator's
+            // own click - only reflect server state when it actually
+            // differs, same guard pattern as scorebugSelector above.
+            if (debugOverlayToggle.checked !== !!gameState.debugOverlay) {
+                debugOverlayToggle.checked = !!gameState.debugOverlay;
+            }
         });
         
         leftTeamInput.addEventListener('input', (e) => {
@@ -1177,7 +1229,7 @@
         // Initialize when page loads
         initializeColorPresets();
         loadAvailableVideos();
-        loadAvailablePresets();
+        loadAvailableScorebugs();
     </script>
 </body>
 </html>

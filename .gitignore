@@ -16,3 +16,7 @@ shufflepolo-config.json
 shufflepolo_sync/state/
 presets/
 public/logos/
+# Overlays are operator data, except the locked Scorebug default which ships with the repo
+overlays/*
+!overlays/overlay_daca270d.json
+!overlays/templates/

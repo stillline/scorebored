@@ -1,0 +1,1758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Overlay Editor</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #1a1a1a;
+    color: #eee;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 12px 16px;
+    background: #222;
+    border-bottom: 1px solid #333;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; margin: 0; margin-right: 8px; }
+  .nav-links a { color: #9ab; text-decoration: none; font-size: 13px; margin-right: 12px; }
+  .nav-links a:hover { text-decoration: underline; }
+  select, input[type=text], button {
+    background: #2a2a2a;
+    color: #eee;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  button { cursor: pointer; }
+  button:hover { background: #333; }
+  button.primary { background: #2d6cdf; border-color: #2d6cdf; }
+  button.primary:hover { background: #3b7aee; }
+  button.danger { background: #5a2323; border-color: #5a2323; }
+  button.danger:hover { background: #6e2b2b; }
+  button.live { background: #1f7a3d; border-color: #1f7a3d; }
+  button.live:hover { background: #249147; }
+  button.icon-btn { padding: 6px 8px; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button:disabled:hover { background: #2a2a2a; }
+  #overlayList { width: 220px; }
+  #ratingBtn { color: #f2c94c; letter-spacing: 1px; min-width: 58px; }
+  #versionList { width: 150px; }
+  #renameInput { width: 180px; display: none; }
+  main {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+  }
+  .pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .pane + .pane { border-left: 1px solid #333; }
+  .pane-header {
+    padding: 8px 12px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #888;
+    background: #202020;
+    border-bottom: 1px solid #333;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  textarea {
+    flex: 1;
+    background: #111;
+    color: #d4d4d4;
+    border: none;
+    outline: none;
+    padding: 12px;
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    resize: none;
+    tab-size: 2;
+  }
+  #status { font-size: 12px; color: #888; margin-left: auto; }
+  #overlayUrl { font-size: 12px; color: #6ab0f3; }
+  #noBindingsWarning {
+    display: none;
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #ffd666;
+    background: #3a2f10;
+    border-top: 1px solid #5a4a1a;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+  #noBindingsWarning.visible { display: block; }
+
+  /* The source pane is only a block list now: a block's code is edited in
+     the #codeDialog modal (click a block, or "Edit code"), so the canvas
+     gets the width while paging through an overlay. */
+  .pane.source { flex: 0 0 200px; }
+  .pane.source .pane-header { flex-direction: column; align-items: stretch; gap: 8px; }
+  .pane.source #blockTabs { flex-direction: column; }
+  .pane.source .block-tab { justify-content: space-between; }
+  .source-hint { padding: 10px 12px; font-size: 11px; color: #666; line-height: 1.5; }
+  #codeDialog {
+    width: min(1100px, 92vw);
+    height: min(820px, 90vh);
+    padding: 0;
+    border: 1px solid #444;
+    border-radius: 6px;
+    background: #181818;
+    color: #eee;
+  }
+  #codeDialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+  #codeDialog form { display: flex; flex-direction: column; height: 100%; margin: 0; }
+  #codeDialog .pane-header { flex: 0 0 auto; }
+  #codeDialog textarea { min-height: 0; }
+  #codeDialogTitle { color: #ddd; text-transform: none; letter-spacing: 0; font-size: 13px; }
+  #blockTabs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    overflow-x: auto;
+    flex: 1;
+  }
+  .block-tab {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+  .block-tab:hover { background: #333; }
+  .block-tab.selected { background: #2d6cdf; border-color: #2d6cdf; }
+  .block-tab .block-tab-x { opacity: 0.6; padding: 0 2px; }
+  .block-tab .block-tab-x:hover { opacity: 1; }
+  #addBlockBtn { flex: 0 0 auto; padding: 4px 8px; font-size: 12px; }
+
+  /* ---- 1920x1080 canvas preview ---- */
+  .pane.preview { flex: 2.2; }
+  #canvasWrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background:
+      linear-gradient(45deg, #2a2a2a 25%, transparent 25%),
+      linear-gradient(-45deg, #2a2a2a 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #2a2a2a 75%),
+      linear-gradient(-45deg, transparent 75%, #2a2a2a 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  }
+  #canvasSizer { position: relative; }
+  #canvasStage {
+    width: 1920px;
+    height: 1080px;
+    transform-origin: top left;
+    position: relative;
+    background: #000;
+    overflow: hidden;
+  }
+  .block-iframe-wrap {
+    position: absolute;
+    pointer-events: none; /* clicks/drags go to the element-handle layered on top */
+  }
+  .block-iframe-wrap iframe {
+    position: absolute;
+    top: 0; left: 0;
+    width: 1920px;
+    height: 1080px;
+    border: none;
+  }
+  .element-handle {
+    position: absolute;
+    cursor: move;
+    outline: 2px solid transparent;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+  .element-handle img { width: 100%; height: 100%; display: block; pointer-events: none; -webkit-user-drag: none; user-drag: none; }
+  .element-handle.selected { outline-color: #2d6cdf; }
+  .element-handle .corner {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    background: #2d6cdf;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    right: -7px;
+    bottom: -7px;
+    cursor: nwse-resize;
+    display: none;
+  }
+  .element-handle .rotate-handle {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    background: #2d6cdf;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    left: 50%;
+    top: -28px;
+    margin-left: -7px;
+    cursor: grab;
+    display: none;
+  }
+  .element-handle.selected .corner,
+  .element-handle.selected .rotate-handle { display: block; }
+
+  #zoomControls { display: flex; align-items: center; gap: 4px; }
+  #zoomControls button { padding: 4px 8px; }
+  #zoomLabel { font-size: 12px; color: #999; width: 44px; text-align: center; }
+
+  /* ---- elements (blocks + logos) / transform panel ---- */
+  .pane.logos { flex: 0 0 280px; }
+  .logos-list { max-height: 180px; overflow-y: auto; border-bottom: 1px solid #333; }
+  .logo-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    border-bottom: 1px solid #2a2a2a;
+    font-size: 12px;
+  }
+  .logo-row:hover { background: #262626; }
+  .logo-row.selected { background: #28354a; }
+  .logo-row img { width: 28px; height: 28px; object-fit: contain; background: #000; flex: 0 0 auto; }
+  .logo-row .logo-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .logo-row button { padding: 2px 6px; font-size: 11px; }
+  .transform-panel { flex: 1; overflow-y: auto; padding: 14px; }
+  .transform-panel h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #888;
+    margin: 0 0 10px;
+  }
+  .xy-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .xy-row label { width: 54px; font-size: 12px; color: #bbb; }
+  .xy-row input[type=number] { width: 80px; }
+  .xy-row .unit { font-size: 11px; color: #777; }
+  /* Drag-to-scrub label, DaVinci Resolve style: click-drag sideways on the
+     label to change the value instead of typing it. */
+  .xy-row label.scrub { cursor: ew-resize; user-select: none; }
+  .xy-row.scrubbing label.scrub { color: #6ab0f3; }
+  #linkZoom { width: 26px; padding: 4px; margin-left: 2px; }
+  #linkZoom.active { background: #2d6cdf; border-color: #2d6cdf; }
+  .transform-section { margin-bottom: 18px; }
+  .reset-btn { font-size: 11px; padding: 3px 8px; margin-top: 4px; }
+  .layer-actions { display: flex; gap: 6px; margin-top: 4px; }
+  .layer-actions button { flex: 1; font-size: 11px; padding: 4px 6px; }
+  .logos-empty, .logos-disabled { color: #777; font-size: 12px; padding: 14px; text-align: center; }
+  #logoFileInput { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Overlay Editor</h1>
+  <div class="nav-links">
+    <a href="/dashboard">Dashboard</a>
+    <a href="/control">Control</a>
+    <a href="/display">Display</a>
+  </div>
+  <button id="prevOverlayBtn" class="icon-btn" title="Previous overlay">&lsaquo;</button>
+  <select id="overlayList"><option value="">+ New overlay</option></select>
+  <button id="nextOverlayBtn" class="icon-btn" title="Next overlay">&rsaquo;</button>
+  <button id="ratingBtn" class="icon-btn" title="Rating - click to cycle 0 to 3 stars">&#9734;&#9734;&#9734;</button>
+  <input type="text" id="renameInput" placeholder="New overlay name">
+  <button id="renameBtn" class="icon-btn" title="Rename">✎</button>
+  <select id="versionList" style="display:none"></select>
+  <button id="saveBtn" class="primary">Save</button>
+  <button id="setActiveBtn" class="live">Set Active (Live)</button>
+  <button id="deleteBtn" class="danger">Delete</button>
+  <span id="status"></span>
+</header>
+
+<main>
+  <div class="pane source">
+    <div class="pane-header">
+      <span>Blocks</span>
+      <span id="blockTabs"></span>
+      <button id="addBlockBtn" title="Add a new HTML/CSS block">+ Block</button>
+      <button id="editCodeBtn" title="Edit the selected block's HTML/CSS">Edit code</button>
+    </div>
+    <div class="source-hint">Click a block to edit its HTML/CSS in a pop-up. The canvas updates live while you type.</div>
+  </div>
+
+  <dialog id="codeDialog">
+    <form method="dialog">
+      <div class="pane-header">
+        <span id="codeDialogTitle">Block</span>
+        <span style="display:flex;gap:8px;">
+          <button type="button" id="copyCodeBtn" title="Copy this block's entire HTML/CSS to the clipboard">Copy code</button>
+          <button type="submit" id="codeDialogClose">Done</button>
+        </span>
+      </div>
+      <textarea id="code" spellcheck="false" placeholder="Paste a full HTML document here..."></textarea>
+      <div id="noBindingsWarning">
+        ⚠ No <code>data-role</code> found — will show static placeholder text, never updates live.
+      </div>
+    </form>
+  </dialog>
+
+  <div class="pane preview">
+    <div class="pane-header">
+      <span>Canvas (1920 &times; 1080) <span id="overlayUrl"></span></span>
+      <div id="zoomControls">
+        <button id="zoomOut">&minus;</button>
+        <span id="zoomLabel">Fit</span>
+        <button id="zoomIn">+</button>
+        <button id="refreshBtn">Refresh</button>
+      </div>
+    </div>
+    <div id="canvasWrap">
+      <div id="canvasSizer">
+        <div id="canvasStage">
+          <!-- block-iframe-wrap elements (one per block) and element-handle
+               elements (one per block + one per logo) injected here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pane logos">
+    <div class="pane-header">
+      <span>Elements</span>
+      <button id="btnAddLogo">+ Logo</button>
+    </div>
+    <input type="file" id="logoFileInput" accept="image/png">
+    <div class="logos-list" id="logosList"></div>
+    <div class="transform-panel" id="transformPanel">
+      <div class="logos-disabled">Save the overlay once before adding elements.</div>
+    </div>
+  </div>
+</main>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+"use strict";
+
+const codeEl = document.getElementById('code');
+const blockTabsEl = document.getElementById('blockTabs');
+const addBlockBtn = document.getElementById('addBlockBtn');
+const noBindingsWarningEl = document.getElementById('noBindingsWarning');
+const listEl = document.getElementById('overlayList');
+const renameInput = document.getElementById('renameInput');
+const renameBtn = document.getElementById('renameBtn');
+const versionListEl = document.getElementById('versionList');
+const statusEl = document.getElementById('status');
+const urlEl = document.getElementById('overlayUrl');
+const saveBtn = document.getElementById('saveBtn');
+const setActiveBtn = document.getElementById('setActiveBtn');
+const deleteBtn = document.getElementById('deleteBtn');
+const refreshBtn = document.getElementById('refreshBtn');
+const logosListEl = document.getElementById('logosList');
+const transformPanel = document.getElementById('transformPanel');
+const btnAddLogo = document.getElementById('btnAddLogo');
+const logoFileInput = document.getElementById('logoFileInput');
+const canvasWrap = document.getElementById('canvasWrap');
+const canvasSizer = document.getElementById('canvasSizer');
+const canvasStage = document.getElementById('canvasStage');
+const zoomInBtn = document.getElementById('zoomIn');
+const zoomOutBtn = document.getElementById('zoomOut');
+const zoomLabel = document.getElementById('zoomLabel');
+
+let currentId = null;
+let currentName = '';
+let currentVersions = []; // [{version, blocks: [{id, name, html}], createdAt}]
+let currentActiveVersion = null;
+let selectedVersion = null; // which version's blocks are loaded right now (not necessarily the active one)
+let currentBlocks = []; // [{id, name, html}] - the live, possibly-edited set for selectedVersion
+let currentBlockTransforms = {}; // {blockId: {zoomX, zoomY, posX, posY, rotation, z}}
+let currentLogos = [];
+
+// Unified selection across both element kinds (a block OR a logo) so the
+// canvas drag/transform code (originally written only for logos, then
+// awkwardly extended with a single HTML_BLOCK_ID sentinel for one whole-
+// document block) can treat "the thing currently selected" generically
+// now that there can be several blocks, not just one.
+let selectedElementKind = null; // 'block' | 'logo' | null
+let selectedElementId = null;
+let selectedBlockId = null; // which block's content is loaded in the textarea - independent of selectedElementKind/Id (you can edit a block's source without its on-canvas handle being selected)
+
+let userZoom = 1;
+const ZOOM_STEP = 0.25;
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 2;
+
+// Only used to call setActive and to know what's live elsewhere (another
+// tab's /control, the kiosk) so this page's "Set Active" button and
+// status text stay correct even if the active item changes from outside
+// this editor.
+const socket = io();
+let liveActiveKind = null;
+let liveActiveId = null;
+
+const DEFAULT_TEMPLATE = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  body { background: #000; margin: 40px; font-family: Arial, sans-serif; }
+  .box { display: flex; gap: 8px; }
+  .team { background: #222; color: #fff; font-weight: bold; font-size: 24px; padding: 10px 20px; }
+  .score { background: #000; color: #fff; font-weight: bold; font-size: 24px; padding: 10px 20px; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <div class="team" data-role="teamName" data-side="left">Team 1</div>
+    <div class="score" data-role="score" data-side="left">0</div>
+  </div>
+</body>
+</html>
+`;
+
+const DEFAULT_TRANSFORM = { zoomX: 100, zoomY: 100, posX: 0, posY: 0, rotation: 0, z: 0 };
+
+function setStatus(msg) {
+  statusEl.textContent = msg;
+  if (msg) setTimeout(() => { if (statusEl.textContent === msg) statusEl.textContent = ''; }, 2500);
+}
+
+function findBlock(id) {
+  return currentBlocks.find(b => b.id === id);
+}
+
+/* ---- 1920x1080 stage scaling (fit-to-pane) ---- */
+
+function fitScale() {
+  const raw = Math.min((canvasWrap.clientWidth - 40) / 1920, (canvasWrap.clientHeight - 40) / 1080, 1);
+  // canvasWrap can report 0 width/height for one frame before the flex
+  // layout settles - falling through to 0/negative scale would shrink the
+  // whole stage (and every handle inside it) to nothing, silently
+  // breaking click/drag hit-testing. Floor it so the stage is always at
+  // least present and clickable.
+  return raw > 0 ? raw : 0.1;
+}
+
+function fitCanvas() {
+  const scale = fitScale() * userZoom;
+  canvasStage.style.transform = 'scale(' + scale + ')';
+  canvasSizer.style.width = (1920 * scale) + 'px';
+  canvasSizer.style.height = (1080 * scale) + 'px';
+  zoomLabel.textContent = Math.round(userZoom * 100) + '%';
+}
+window.addEventListener('resize', fitCanvas);
+
+function canvasScale() {
+  const m = canvasStage.style.transform.match(/scale\(([\d.]+)\)/);
+  return m ? parseFloat(m[1]) : 1;
+}
+
+zoomInBtn.addEventListener('click', () => { userZoom = Math.min(ZOOM_MAX, userZoom + ZOOM_STEP); fitCanvas(); });
+zoomOutBtn.addEventListener('click', () => { userZoom = Math.max(ZOOM_MIN, userZoom - ZOOM_STEP); fitCanvas(); });
+
+/* ---- block iframes on the canvas ----
+   One real <iframe> per block, each wrapped in a .block-iframe-wrap div
+   that's sized/positioned/scaled/rotated per that block's transform (same
+   math as server.js's blockIframeStyle() - this is the client-side
+   mirror). Once the overlay is saved and this IS the active version, each
+   iframe points at the real /overlay/:id/block/:blockId URL (live data,
+   exactly what the real output shows); otherwise it's a srcdoc render of
+   that block's current (possibly unsaved) textarea content - layout-only,
+   no live data, since there's no saved URL yet that would reflect it. */
+
+function blockTransformStyle(t) {
+  const zoomX = (t.zoomX ?? 100) / 100;
+  const zoomY = (t.zoomY ?? 100) / 100;
+  const centerX = 960 + (t.posX ?? 0);
+  const centerY = 540 + (t.posY ?? 0);
+  const left = centerX - 1920 / 2;
+  const top = centerY - 1080 / 2;
+  return `left:${left}px;top:${top}px;width:1920px;height:1080px;` +
+    `transform-origin:50% 50%;transform:scale(${zoomX},${zoomY}) rotate(${t.rotation ?? 0}deg);z-index:${t.z ?? 0};`;
+}
+
+// previewingActiveVersion: true only when editing the overlay's actual
+// live version - that's the only time a block's real /overlay/:id/block/
+// :blockId URL exists and reflects current content, so it's the only time
+// the canvas can show genuinely live data instead of a static srcdoc
+// render of whatever's currently in that block's textarea.
+function previewingActiveVersion() {
+  return !!(currentId && selectedVersion === currentActiveVersion);
+}
+
+function renderBlockIframes() {
+  canvasStage.querySelectorAll('.block-iframe-wrap').forEach(el => el.remove());
+  const live = previewingActiveVersion();
+  currentBlocks.forEach(block => {
+    const t = currentBlockTransforms[block.id] || DEFAULT_TRANSFORM;
+    const wrap = document.createElement('div');
+    wrap.className = 'block-iframe-wrap';
+    wrap.dataset.blockId = block.id;
+    wrap.style.cssText = blockTransformStyle(t);
+    const iframe = document.createElement('iframe');
+    if (live) {
+      iframe.src = '/overlay/' + currentId + '/block/' + block.id + '?t=' + Date.now();
+    } else {
+      iframe.srcdoc = block.html;
+    }
+    wrap.appendChild(iframe);
+    // Insert before any element-handle children so handles always paint
+    // on top (DOM order matters here since wraps/handles share no
+    // explicit stacking context beyond canvasStage itself).
+    canvasStage.insertBefore(wrap, canvasStage.firstChild);
+  });
+}
+
+function getBlockIframe(blockId) {
+  const wrap = canvasStage.querySelector('.block-iframe-wrap[data-block-id="' + blockId + '"]');
+  return wrap ? wrap.querySelector('iframe') : null;
+}
+
+let iframeDebounce = null;
+codeEl.addEventListener('input', () => {
+  if (!selectedBlockId) return;
+  const block = findBlock(selectedBlockId);
+  if (block) block.html = codeEl.value;
+  updateBindingsWarning();
+  // Only the srcdoc (non-active-version) path reflects textarea keystrokes
+  // live - the real-URL path doesn't change until Save/Set Active persists it.
+  if (previewingActiveVersion()) return;
+  clearTimeout(iframeDebounce);
+  iframeDebounce = setTimeout(() => {
+    const iframe = getBlockIframe(selectedBlockId);
+    if (iframe) iframe.srcdoc = block ? block.html : '';
+  }, 400);
+});
+
+// Pasted markup with zero data-role attributes is valid (a purely
+// decorative block is a real use case) but is ALSO the exact shape of a
+// mistake that's bitten this app's actual users before: pasting raw HTML
+// and forgetting to add data-role, so it silently shows static
+// placeholder text forever instead of live scores. Checks the block
+// CURRENTLY LOADED in the textarea - see hasAnyUnboundBlock for the
+// Set Active-time check across every block.
+function hasNoBindings() {
+  return !/data-role\s*=/.test(codeEl.value);
+}
+function hasAnyUnboundBlock() {
+  return currentBlocks.some(b => !/data-role\s*=/.test(b.html));
+}
+function updateBindingsWarning() {
+  noBindingsWarningEl.classList.toggle('visible', hasNoBindings());
+}
+
+/* ---- block tabs (source pane header) ---- */
+
+function renderBlockTabs() {
+  blockTabsEl.innerHTML = '';
+  currentBlocks.forEach(block => {
+    const tab = document.createElement('div');
+    tab.className = 'block-tab' + (block.id === selectedBlockId ? ' selected' : '');
+    tab.innerHTML = `<span>${block.name}</span>` + (currentBlocks.length > 1 ? `<span class="block-tab-x" data-action="delete">✕</span>` : '');
+    tab.addEventListener('click', (e) => {
+      if (e.target.closest('[data-action="delete"]')) return;
+      selectBlockForEditing(block.id);
+      openCodeDialog();
+    });
+    const xBtn = tab.querySelector('[data-action="delete"]');
+    if (xBtn) xBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteBlock(block.id); });
+    blockTabsEl.appendChild(tab);
+  });
+}
+
+function selectBlockForEditing(blockId) {
+  selectedBlockId = blockId;
+  const block = findBlock(blockId);
+  codeEl.value = block ? block.html : '';
+  document.getElementById('codeDialogTitle').textContent = block ? `Block: ${block.name}` : 'Block';
+  renderBlockTabs();
+  updateBindingsWarning();
+}
+
+// The code editor lives in a modal so the canvas has the screen while paging
+// through an overlay. Everything that reads/writes #code (live srcdoc preview
+// on input, save, Set Active) is unchanged: the textarea is just inside
+// the dialog now. Esc or Done closes it; edits stay in currentBlocks, same
+// as before, until Save.
+const codeDialog = document.getElementById('codeDialog');
+function openCodeDialog() {
+  if (!selectedBlockId && !currentBlocks.length) return;
+  const block = findBlock(selectedBlockId);
+  document.getElementById('codeDialogTitle').textContent = block ? `Block: ${block.name}` : 'Block';
+  if (!codeDialog.open) codeDialog.showModal();
+  codeEl.focus();
+}
+// Copies the whole block (what the textarea holds, including unsaved
+// edits) - for handing the code to someone, or to an agent, outside the
+// editor. navigator.clipboard needs a secure context; over plain http on
+// the LAN it may be unavailable, so fall back to selecting the text and
+// the deprecated-but-working execCommand('copy').
+document.getElementById('copyCodeBtn').addEventListener('click', async () => {
+  const text = codeEl.value;
+  const btn = document.getElementById('copyCodeBtn');
+  const flash = (label) => { btn.textContent = label; setTimeout(() => { btn.textContent = 'Copy code'; }, 1500); };
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      codeEl.focus();
+      codeEl.select();
+      if (!document.execCommand('copy')) throw new Error('copy command refused');
+    }
+    flash(`Copied ${text.length.toLocaleString()} chars`);
+  } catch (err) {
+    flash('Copy failed - select all and copy');
+    setStatus('Copy failed: ' + err.message);
+  }
+});
+
+document.getElementById('editCodeBtn').addEventListener('click', () => {
+  if (!selectedBlockId && currentBlocks.length) selectBlockForEditing(currentBlocks[0].id);
+  openCodeDialog();
+});
+
+addBlockBtn.addEventListener('click', async () => {
+  if (!currentId) { setStatus('Save the overlay first'); return; }
+  try {
+    const res = await fetch('/api/overlays/' + currentId + '/blocks?version=' + selectedVersion, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || 'Failed to add block');
+    const overlay = await res.json();
+    applyOverlayBlocksAndTransforms(overlay);
+    const newBlock = currentBlocks[currentBlocks.length - 1];
+    selectBlockForEditing(newBlock.id);
+    selectElement('block', newBlock.id);
+    renderBlockIframes();
+    setStatus('Block added');
+    openCodeDialog();
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+  }
+});
+
+async function deleteBlock(blockId) {
+  if (currentBlocks.length <= 1) { setStatus("Can't delete the last block"); return; }
+  if (!confirm('Delete this block? Its content is still in older saved versions, but this removes it from the current one.')) return;
+  try {
+    const res = await fetch('/api/overlays/' + currentId + '/blocks/' + blockId + '?version=' + selectedVersion, { method: 'DELETE' });
+    if (!res.ok) throw new Error((await res.json()).error || 'Delete failed');
+    const overlay = await res.json();
+    applyOverlayBlocksAndTransforms(overlay);
+    if (selectedBlockId === blockId) selectBlockForEditing(currentBlocks[0].id);
+    if (selectedElementKind === 'block' && selectedElementId === blockId) selectElement(null, null);
+    renderBlockTabs();
+    renderBlockIframes();
+    renderElementHandles();
+    renderTransformPanel();
+    setStatus('Block deleted');
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+  }
+}
+
+// Applies an overlay API response's blocks/transforms into the local
+// editing state, PRESERVING any in-progress (unsaved) textarea edits for
+// whichever block is currently selected - a server round-trip (add block,
+// delete block, etc.) must not silently discard what you were mid-typing
+// in another block's tab.
+function applyOverlayBlocksAndTransforms(overlay) {
+  const activeVersion = (overlay.versions || []).find(v => v.version === overlay.activeVersion);
+  const serverBlocks = (selectedVersion === overlay.activeVersion
+    ? (activeVersion && activeVersion.blocks)
+    : (overlay.versions.find(v => v.version === selectedVersion) || {}).blocks) || [];
+  const unsavedEdit = selectedBlockId ? codeEl.value : null;
+  currentBlocks = serverBlocks.map(b => ({ ...b }));
+  if (selectedBlockId && unsavedEdit !== null) {
+    const stillExists = findBlock(selectedBlockId);
+    if (stillExists) stillExists.html = unsavedEdit;
+  }
+  currentBlockTransforms = overlay.blockTransforms || {};
+  currentVersions = overlay.versions || [];
+  currentActiveVersion = overlay.activeVersion;
+}
+
+/* ---- data + list management ---- */
+
+// The dropdown IS the name field: picking an existing overlay shows its
+// name as the selected option's label - there is no separate always-
+// visible text input duplicating it. To rename, click the pencil button,
+// which reveals a text input scoped to that one action; to create a new
+// overlay, pick "+ New overlay" and give it a name on first Save (via the
+// same rename input, repurposed - see saveBtn below).
+let currentOverlays = []; // the list as last fetched, in list order - prev/next cycle through it
+let currentRating = 0;
+const starsFor = (rating) => '\u2605'.repeat(rating || 0) + '\u2606'.repeat(3 - (rating || 0));
+
+async function loadList(selectId) {
+  const res = await fetch('/api/overlays');
+  // Stable order for prev/next: the locked default first, then by name.
+  currentOverlays = (await res.json()).sort((a, b) => (b.locked - a.locked) || a.name.localeCompare(b.name));
+  listEl.innerHTML = '<option value="">+ New overlay</option>' +
+    currentOverlays.map(o => `<option value="${o.id}">${o.rating ? '\u2605'.repeat(o.rating) + ' ' : ''}${o.name}</option>`).join('');
+  if (selectId) listEl.value = selectId;
+}
+
+// Prev/Next step through the overlay list in its displayed order, wrapping
+// at the ends - for flipping through a stack of templates on the canvas
+// without opening the dropdown each time.
+function stepOverlay(delta) {
+  if (!currentOverlays.length) return;
+  const i = currentOverlays.findIndex(o => o.id === currentId);
+  const next = currentOverlays[(i + delta + currentOverlays.length) % currentOverlays.length];
+  listEl.value = next.id;
+  loadOverlay(next.id);
+}
+document.getElementById('prevOverlayBtn').addEventListener('click', () => stepOverlay(-1));
+document.getElementById('nextOverlayBtn').addEventListener('click', () => stepOverlay(1));
+
+function renderRatingBtn() {
+  const btn = document.getElementById('ratingBtn');
+  btn.textContent = starsFor(currentRating);
+  btn.disabled = !currentId;
+}
+
+// One button cycles 0 -> 1 -> 2 -> 3 -> 0 stars; the rating is metadata on
+// the overlay (allowed on the locked default too) and shows in the list.
+document.getElementById('ratingBtn').addEventListener('click', async () => {
+  if (!currentId) return;
+  const rating = (currentRating + 1) % 4;
+  try {
+    const res = await fetch('/api/overlays/' + currentId + '/rating', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rating }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || 'Rating failed');
+    currentRating = rating;
+    renderRatingBtn();
+    await loadList(currentId);
+  } catch (err) {
+    setStatus('Error: ' + err.message);
+  }
+});
+
+function renderVersionList() {
+  versionListEl.innerHTML = currentVersions.slice().reverse().map(v => {
+    const label = 'v' + v.version + ' — ' + new Date(v.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) +
+      (v.version === currentActiveVersion ? ' [active]' : '');
+    return `<option value="${v.version}">${label}</option>`;
+  }).join('');
+  versionListEl.value = selectedVersion;
+}
+
+function updateActiveButtonState() {
+  const isLive = liveActiveKind === 'overlay' && liveActiveId === currentId;
+  setActiveBtn.textContent = isLive ? '● Live' : 'Set Active (Live)';
+  setActiveBtn.disabled = !currentId || isLive;
+  setActiveBtn.classList.toggle('live', true);
+}
+
+// Remembers the last overlay opened in THIS browser, so a page reload (or
+// reopening the tab later) returns to it instead of always starting at
+// "+ New overlay". Purely a per-browser editing convenience - not synced
+// anywhere, never read by anything server-side, and silently no-ops if
+// localStorage is unavailable (private browsing, blocked site data) since
+// losing this is never worse than the old always-start-fresh behavior.
+const LAST_OVERLAY_KEY = 'scorebored.overlayEditor.lastOverlayId';
+function rememberLastOverlay(id) {
+  try {
+    if (id) localStorage.setItem(LAST_OVERLAY_KEY, id);
+    else localStorage.removeItem(LAST_OVERLAY_KEY);
+  } catch (e) { /* ignore */ }
+}
+function recallLastOverlay() {
+  try { return localStorage.getItem(LAST_OVERLAY_KEY); } catch (e) { return null; }
+}
+
+async function loadOverlay(id) {
+  selectElement(null, null);
+  if (!id) {
+    currentId = null;
+    currentName = '';
+    currentVersions = [];
+    currentActiveVersion = null;
+    selectedVersion = null;
+    currentRating = 0;
+    renderRatingBtn();
+    applyLockState(null);
+    currentBlocks = [{ id: 'draft', name: 'Block 1', html: DEFAULT_TEMPLATE }];
+    selectedBlockId = 'draft';
+    codeEl.value = DEFAULT_TEMPLATE;
+    currentBlockTransforms = { draft: { ...DEFAULT_TRANSFORM } };
+    currentLogos = [];
+    urlEl.textContent = '';
+    renderVersionList();
+    renderBlockTabs();
+    renderBlockIframes();
+    renderLogosList();
+    renderElementHandles();
+    renderTransformPanel();
+    updateActiveButtonState();
+    updateBindingsWarning();
+    rememberLastOverlay(null);
+    return;
+  }
+  const res = await fetch('/api/overlays/' + id);
+  if (!res.ok) {
+    setStatus('Failed to load');
+    // Stale id from a previous session (overlay since deleted/renamed-away) -
+    // clear it so the NEXT reload doesn't keep retrying the same dead id.
+    rememberLastOverlay(null);
+    return;
+  }
+  const overlay = await res.json();
+  currentId = overlay.id;
+  currentName = overlay.name;
+  currentRating = Number.isInteger(overlay.rating) ? overlay.rating : 0;
+  renderRatingBtn();
+  currentVersions = overlay.versions || [];
+  currentActiveVersion = overlay.activeVersion;
+  selectedVersion = overlay.activeVersion;
+  const version = currentVersions.find(v => v.version === selectedVersion) || currentVersions[currentVersions.length - 1];
+  currentBlocks = ((version && version.blocks) || []).map(b => ({ ...b }));
+  currentBlockTransforms = overlay.blockTransforms || {};
+  currentLogos = overlay.logos || [];
+  selectedBlockId = currentBlocks.length ? currentBlocks[0].id : null;
+  codeEl.value = selectedBlockId ? findBlock(selectedBlockId).html : '';
+  urlEl.textContent = window.location.origin + '/overlay/' + overlay.id;
+  renderVersionList();
+  renderBlockTabs();
+  renderBlockIframes();
+  renderLogosList();
+  renderElementHandles();
+  renderTransformPanel();
+  updateActiveButtonState();
+  updateBindingsWarning();
+  applyLockState(overlay);
+  rememberLastOverlay(overlay.id);
+}
+
+// A locked overlay (`locked: true` in its JSON - the Scorebug default that
+// ships with the repo) is read-only here: the server answers 423 to every
+// edit, so the controls that would make one are disabled and the status
+// says why. Set Active stays available - choosing what is on screen is
+// not an edit.
+let currentLocked = false;
+function applyLockState(overlay) {
+  currentLocked = !!(overlay && overlay.locked);
+  for (const btn of [deleteBtn, addBlockBtn, btnAddLogo]) btn.disabled = currentLocked;
+  // The code stays editable so a tweak can be saved AS A COPY (see
+  // saveBtn); the default itself is never overwritten. The rename box
+  // doubles as the copy's name.
+  saveBtn.textContent = currentLocked ? 'Save as copy' : 'Save';
+  renameBtn.title = currentLocked ? 'Name for the copy' : 'Rename';
+  if (currentLocked) setStatus('Locked default - Save creates an editable copy');
+}
+
+listEl.addEventListener('change', () => loadOverlay(listEl.value));
+
+versionListEl.addEventListener('change', () => {
+  selectedVersion = Number(versionListEl.value);
+  const version = currentVersions.find(v => v.version === selectedVersion);
+  currentBlocks = ((version && version.blocks) || []).map(b => ({ ...b }));
+  selectedBlockId = currentBlocks.length ? currentBlocks[0].id : null;
+  codeEl.value = selectedBlockId ? findBlock(selectedBlockId).html : '';
+  renderBlockTabs();
+  renderBlockIframes();
+  renderElementHandles();
+  updateBindingsWarning();
+});
+
+renameBtn.addEventListener('click', () => {
+  if (renameInput.style.display === 'none' || !renameInput.style.display) {
+    renameInput.style.display = 'inline-block';
+    renameInput.value = currentName;
+    renameInput.focus();
+    renameInput.select();
+  } else {
+    renameInput.style.display = 'none';
+  }
+});
+
+renameInput.addEventListener('keydown', async (e) => {
+  if (e.key === 'Escape') { renameInput.style.display = 'none'; return; }
+  if (e.key !== 'Enter') return;
+  const newName = renameInput.value.trim();
+  if (!newName || !currentId) { renameInput.style.display = 'none'; return; }
+  try {
+    const res = await fetch('/api/overlays/' + currentId + '/versions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName, blocks: currentBlocksForSave() }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || 'Rename failed');
+    const overlay = await res.json();
+    currentName = overlay.name;
+    applyOverlayBlocksAndTransforms(overlay);
+    selectedVersion = overlay.activeVersion;
+    renderVersionList();
+    await loadList(currentId);
+    renameInput.style.display = 'none';
+    setStatus('Renamed');
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+  }
+});
+
+// The full block list as it should be saved: every block's latest content,
+// with the currently-edited one's textarea value substituted in (other
+// blocks' content was already kept up to date in currentBlocks as their
+// own tabs were edited - see selectBlockForEditing/codeEl's input listener).
+function currentBlocksForSave() {
+  if (selectedBlockId) {
+    const block = findBlock(selectedBlockId);
+    if (block) block.html = codeEl.value;
+  }
+  return currentBlocks.map(b => ({ id: b.id, name: b.name, html: b.html }));
+}
+
+// Always appends a new version - never overwrites one - so a draft never
+// clobbers what's actually on air. Creating a brand-new overlay (no
+// currentId yet) asks for a name inline via the rename input if one
+// hasn't been given, same as the rename flow above; the FIRST block's
+// content seeds that initial save (additional blocks, if any were added
+// to the unsaved draft, aren't possible before the first save since
+// blocks require a currentId to attach to server-side).
+saveBtn.addEventListener('click', async () => {
+  if (!currentId) {
+    const name = (renameInput.style.display === 'none' || !renameInput.style.display) ? '' : renameInput.value.trim();
+    try {
+      const res = await fetch('/api/overlays', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, html: codeEl.value }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
+      const overlay = await res.json();
+      currentId = overlay.id;
+      currentName = overlay.name;
+      selectedVersion = overlay.activeVersion;
+      applyOverlayBlocksAndTransforms(overlay);
+      currentLogos = overlay.logos || [];
+      selectedBlockId = currentBlocks.length ? currentBlocks[0].id : null;
+      urlEl.textContent = window.location.origin + '/overlay/' + overlay.id;
+      renameInput.style.display = 'none';
+      await loadList(overlay.id);
+      renderVersionList();
+      renderBlockTabs();
+      renderBlockIframes();
+      renderLogosList();
+      renderElementHandles();
+      renderTransformPanel();
+      updateActiveButtonState();
+      rememberLastOverlay(overlay.id);
+      setStatus('Saved');
+    } catch (e) {
+      setStatus('Error: ' + e.message);
+    }
+    return;
+  }
+
+  // The locked default can't be overwritten: Save duplicates it into a new,
+  // unlocked overlay carrying the edited code (named from the rename box if
+  // it's open, else "<name> copy"), and the editor switches to the copy.
+  if (currentLocked) {
+    const name = (renameInput.style.display === 'none' || !renameInput.style.display) ? '' : renameInput.value.trim();
+    try {
+      const res = await fetch('/api/overlays/' + currentId + '/duplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, blocks: currentBlocksForSave() }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Duplicate failed');
+      const overlay = await res.json();
+      renameInput.style.display = 'none';
+      await loadList(overlay.id);
+      await loadOverlay(overlay.id);
+      setStatus('Saved as a copy: ' + overlay.name);
+    } catch (e) {
+      setStatus('Error: ' + e.message);
+    }
+    return;
+  }
+
+  // No time-based versioning: a save overwrites the overlay in place.
+  try {
+    const res = await fetch('/api/overlays/' + currentId + '/versions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ blocks: currentBlocksForSave() }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
+    const overlay = await res.json();
+    applyOverlayBlocksAndTransforms(overlay);
+    selectedVersion = overlay.activeVersion;
+    renderVersionList();
+    renderBlockTabs();
+    renderBlockIframes();
+    setStatus('Saved');
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+  }
+});
+
+// Points this overlay's activeVersion at whichever version is currently
+// loaded, THEN makes the overlay live on /display. If the blocks loaded
+// right now differ from what's saved in selectedVersion (edited since
+// last Save), Set Active saves them as a new version first, so what goes
+// live is always something that actually got persisted.
+setActiveBtn.addEventListener('click', async () => {
+  if (!currentId) return;
+  if (hasAnyUnboundBlock() && !confirm(
+    'At least one block has no data-role attributes, so it will show static placeholder text ' +
+    'and never update with real scores or clock.\n\n' +
+    'Set it active anyway?'
+  )) return;
+  try {
+    const blocksToSave = currentBlocksForSave();
+    const savedVersion = currentVersions.find(v => v.version === selectedVersion);
+    const unchanged = savedVersion && JSON.stringify((savedVersion.blocks || []).map(b => b.html)) === JSON.stringify(blocksToSave.map(b => b.html));
+    if (!unchanged) {
+      const saveRes = await fetch('/api/overlays/' + currentId + '/versions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blocks: blocksToSave }),
+      });
+      if (!saveRes.ok) throw new Error((await saveRes.json()).error || 'Save failed');
+      const overlay = await saveRes.json();
+      applyOverlayBlocksAndTransforms(overlay);
+      selectedVersion = overlay.activeVersion;
+    }
+    const activeRes = await fetch('/api/overlays/' + currentId + '/active-version', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version: selectedVersion }),
+    });
+    if (!activeRes.ok) throw new Error((await activeRes.json()).error || 'Set active-version failed');
+    const overlay = await activeRes.json();
+    currentActiveVersion = overlay.activeVersion;
+    renderVersionList();
+    renderBlockTabs();
+    renderBlockIframes();
+    socket.emit('setActive', { kind: 'overlay', id: currentId });
+    setStatus('Live');
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+  }
+});
+
+deleteBtn.addEventListener('click', async () => {
+  if (!currentId) { setStatus('Nothing to delete'); return; }
+  if (!confirm('Delete "' + currentName + '"? This cannot be undone.')) return;
+  const res = await fetch('/api/overlays/' + currentId, { method: 'DELETE' });
+  if (!res.ok) { setStatus('Delete failed'); return; }
+  await loadList();
+  listEl.value = '';
+  loadOverlay(null);
+  setStatus('Deleted');
+});
+
+refreshBtn.addEventListener('click', renderBlockIframes);
+
+socket.on('gameUpdate', (gameState) => {
+  liveActiveKind = gameState.activeKind;
+  liveActiveId = gameState.activeId;
+  updateActiveButtonState();
+});
+
+/* ---- element (block + logo) transform math ----
+   zoomX/zoomY: a direct scale percentage of the 1920x1080 canvas (for a
+   block) or of the uploaded image's native pixel size (for a logo).
+   posX/posY: px offset from canvas CENTER (960, 540). rotation: degrees.
+   All canvas-pixel coordinates, same 1920x1080 space the live page uses. */
+
+function logoRect(logo) {
+  const w = logo.nativeW * (logo.zoomX / 100);
+  const h = logo.nativeH * (logo.zoomY / 100);
+  const centerX = 960 + logo.posX;
+  const centerY = 540 + logo.posY;
+  return { left: centerX - w / 2, top: centerY - h / 2, w, h, centerX, centerY };
+}
+
+// The underlying transform (zoomX/zoomY/posX/posY) stays canvas-relative -
+// 100% zoom always means "the full 1920x1080 canvas", exactly matching
+// server.js's blockIframeStyle(). That math must never change, since it's
+// what's persisted and what the live output renders from.
+//
+// The SELECTION HANDLE shown on screen, though, hugs the block's actual
+// visible content instead of always drawing the full canvas-sized box -
+// unlike the single-block days (where "body doesn't reliably reflect
+// visible content size" killed an earlier attempt at this), each block now
+// has its own isolated iframe, so measuring its real children's union
+// bounding box is unambiguous: there's no other block's content to
+// confuse it with. measureBlockContentRect() does that measurement in the
+// iframe's own native 1920x1080 coordinate space (same space blockRect's
+// canvas math already uses), so blockRect can just substitute it in place
+// of the full-canvas box without any extra coordinate conversion.
+function measureBlockContentRect(blockId) {
+  const iframe = getBlockIframe(blockId);
+  let doc = null;
+  try { doc = iframe && iframe.contentDocument; } catch (e) { /* cross-origin, shouldn't happen (same-origin srcdoc/src) but fall back safely */ }
+  if (!doc || !doc.body) return null;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const walk = (node) => {
+    for (const child of node.children) {
+      const style = doc.defaultView.getComputedStyle(child);
+      if (style.display !== 'none' && style.visibility !== 'hidden') {
+        const r = child.getBoundingClientRect();
+        // Only count elements with real rendered size and some non-empty
+        // visual contribution (background/border/text) - skips zero-size
+        // layout-only wrapper divs that would otherwise pad the box out
+        // to their full-width block default.
+        const hasVisual = r.width > 0 && r.height > 0 && (
+          (child.textContent || '').trim().length > 0 ||
+          style.backgroundColor !== 'rgba(0, 0, 0, 0)' ||
+          style.backgroundImage !== 'none' ||
+          parseFloat(style.borderTopWidth) > 0 ||
+          child.tagName === 'IMG' || child.tagName === 'SVG'
+        );
+        if (hasVisual) {
+          minX = Math.min(minX, r.left);
+          minY = Math.min(minY, r.top);
+          maxX = Math.max(maxX, r.right);
+          maxY = Math.max(maxY, r.bottom);
+        }
+      }
+      walk(child);
+    }
+  };
+  walk(doc.body);
+
+  if (!isFinite(minX)) return null; // nothing visible yet (empty content, not loaded)
+  return { left: minX, top: minY, w: maxX - minX, h: maxY - minY };
+}
+
+function blockRect(blockId) {
+  const t = currentBlockTransforms[blockId] || DEFAULT_TRANSFORM;
+  const zoomX = t.zoomX / 100;
+  const zoomY = t.zoomY / 100;
+  const centerX = 960 + (t.posX ?? 0);
+  const centerY = 540 + (t.posY ?? 0);
+
+  const content = measureBlockContentRect(blockId);
+  // canvasLeft/canvasTop/canvasW/canvasH: the full-canvas box, still used
+  // as the fallback (content not measurable yet) and as the basis for
+  // scale-drag math below, since that math needs to know how zoom% maps
+  // to on-screen pixels regardless of how the handle itself is drawn.
+  const canvasW = 1920 * zoomX;
+  const canvasH = 1080 * zoomY;
+  const canvasLeft = centerX - canvasW / 2;
+  const canvasTop = centerY - canvasH / 2;
+
+  if (!content) {
+    return { left: canvasLeft, top: canvasTop, w: canvasW, h: canvasH, centerX, centerY, canvasW, canvasH };
+  }
+
+  // content.left/top/w/h are in the iframe's own native (unscaled)
+  // 1920x1080 space, with (0,0) at the iframe's own top-left - convert to
+  // canvas pixels the same way the iframe wrap itself is positioned: the
+  // iframe's native origin sits at (canvasLeft, canvasTop) and everything
+  // inside it is scaled by zoomX/zoomY from there.
+  const left = canvasLeft + content.left * zoomX;
+  const top = canvasTop + content.top * zoomY;
+  const w = content.w * zoomX;
+  const h = content.h * zoomY;
+  // centerX/centerY stay the TRANSFORM's center (canvas center + posX/posY)
+  // - that's the rotation pivot and drag-move origin, and must stay tied
+  // to the persisted transform data, not to wherever the content happens
+  // to be measured - rotating a corner-heavy block should still pivot
+  // around its real anchor point, not drift to the content's own center.
+  return { left, top, w, h, centerX, centerY, canvasW, canvasH };
+}
+
+// Layer-agnostic accessors used by selection/drag code so it doesn't need
+// to special-case blocks vs. logos everywhere - both return objects
+// shaped like {kind, id, zoomX, zoomY, posX, posY, rotation, z}.
+function findElement(kind, id) {
+  if (kind === 'block') {
+    const t = currentBlockTransforms[id];
+    return t ? { kind: 'block', id, ...t } : null;
+  }
+  if (kind === 'logo') {
+    const logo = currentLogos.find(l => l.id === id);
+    return logo ? { kind: 'logo', ...logo } : null;
+  }
+  return null;
+}
+function elementRect(el) {
+  return el.kind === 'block' ? blockRect(el.id) : logoRect(el);
+}
+
+/* ---- elements list (blocks + logos, click to select) ---- */
+
+function renderLogosList() {
+  logosListEl.innerHTML = '';
+  if (!currentId) return;
+
+  currentBlocks.forEach(block => {
+    const row = document.createElement('div');
+    const isSel = selectedElementKind === 'block' && selectedElementId === block.id;
+    row.className = 'logo-row' + (isSel ? ' selected' : '');
+    // Same delete-button treatment as a logo row below, except when this
+    // is the last remaining block - deleteBlock() itself refuses that
+    // case (an overlay needs at least one block), so there's no point
+    // showing a button that would just error.
+    const canDelete = currentBlocks.length > 1;
+    row.innerHTML = `<span class="logo-name">🗎 ${block.name}</span>` + (canDelete ? `<button data-action="delete">✕</button>` : '');
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('[data-action="delete"]')) return;
+      selectElement('block', block.id);
+    });
+    if (canDelete) {
+      row.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteBlock(block.id);
+      });
+    }
+    logosListEl.appendChild(row);
+  });
+
+  currentLogos.slice().sort((a, b) => (b.z ?? 0) - (a.z ?? 0)).forEach(logo => {
+    const row = document.createElement('div');
+    const isSel = selectedElementKind === 'logo' && selectedElementId === logo.id;
+    row.className = 'logo-row' + (isSel ? ' selected' : '');
+    row.innerHTML = `<img src="/logos/${logo.assetId}"><span class="logo-name">${logo.assetId}</span><button data-action="delete">✕</button>`;
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('[data-action="delete"]')) return;
+      selectElement('logo', logo.id);
+    });
+    row.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteLogo(logo.id);
+    });
+    logosListEl.appendChild(row);
+  });
+}
+
+function selectElement(kind, id) {
+  selectedElementKind = kind;
+  selectedElementId = id;
+  renderLogosList();
+  renderElementHandles();
+  renderTransformPanel();
+}
+
+// Delete/Backspace deletes whatever's currently selected on the canvas -
+// standard design-tool convention, matching the ✕ buttons in the layers
+// list above (deleteBlock/deleteLogo) rather than duplicating their
+// confirm/last-block-guard logic. Guarded against any text-input context
+// (the HTML source textarea, rename field, transform number inputs, etc)
+// so an ordinary Backspace-while-typing never deletes a canvas element
+// out from under the person typing.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+  if (!selectedElementKind || !selectedElementId) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || (document.activeElement && document.activeElement.isContentEditable)) return;
+  e.preventDefault();
+  if (selectedElementKind === 'block') deleteBlock(selectedElementId);
+  else if (selectedElementKind === 'logo') deleteLogo(selectedElementId);
+});
+
+/* ---- draggable element handles on the canvas ---- */
+
+function renderElementHandles() {
+  canvasStage.querySelectorAll('.element-handle').forEach(el => el.remove());
+
+  currentBlocks.forEach(block => {
+    const isSel = selectedElementKind === 'block' && selectedElementId === block.id;
+    if (!isSel) return; // only the SELECTED block shows a handle (it represents the whole canvas-sized iframe, which would be visual clutter to always outline)
+    const rect = blockRect(block.id);
+    const t = currentBlockTransforms[block.id] || DEFAULT_TRANSFORM;
+    const handle = document.createElement('div');
+    handle.className = 'element-handle selected';
+    handle.style.left = rect.left + 'px';
+    handle.style.top = rect.top + 'px';
+    handle.style.width = rect.w + 'px';
+    handle.style.height = rect.h + 'px';
+    handle.style.zIndex = 1000; // always on top of logos while actively selected, so the handle itself stays grabbable
+    handle.style.transform = 'rotate(' + (t.rotation || 0) + 'deg)';
+    handle.innerHTML = `<div class="corner" data-handle="scale"></div><div class="rotate-handle" data-handle="rotate"></div>`;
+    wireHandleDrag(handle, 'block', block.id);
+    canvasStage.appendChild(handle);
+  });
+
+  currentLogos.slice().sort((a, b) => (a.z ?? 0) - (b.z ?? 0)).forEach(logo => {
+    const rect = logoRect(logo);
+    const isSel = selectedElementKind === 'logo' && selectedElementId === logo.id;
+    const handle = document.createElement('div');
+    handle.className = 'element-handle' + (isSel ? ' selected' : '');
+    handle.style.left = rect.left + 'px';
+    handle.style.top = rect.top + 'px';
+    handle.style.width = rect.w + 'px';
+    handle.style.height = rect.h + 'px';
+    handle.style.zIndex = (logo.z ?? 0) + 1;
+    handle.style.transform = 'rotate(' + (logo.rotation || 0) + 'deg)';
+    handle.innerHTML = `<img src="/logos/${logo.assetId}" draggable="false"><div class="corner" data-handle="scale"></div><div class="rotate-handle" data-handle="rotate"></div>`;
+    wireHandleDrag(handle, 'logo', logo.id);
+    canvasStage.appendChild(handle);
+  });
+}
+
+function wireHandleDrag(handle, kind, id) {
+  handle.addEventListener('mousedown', (e) => {
+    if (e.target.dataset.handle) return; // corner/rotate handles have their own listeners
+    selectElement(kind, id);
+    startDrag(e, kind, id, 'move');
+  });
+  handle.querySelector('[data-handle="scale"]').addEventListener('mousedown', (e) => {
+    e.stopPropagation();
+    selectElement(kind, id);
+    startDrag(e, kind, id, 'scale');
+  });
+  handle.querySelector('[data-handle="rotate"]').addEventListener('mousedown', (e) => {
+    e.stopPropagation();
+    selectElement(kind, id);
+    startDrag(e, kind, id, 'rotate');
+  });
+}
+
+let dragState = null;
+
+function startDrag(e, kind, id, mode) {
+  e.preventDefault();
+  const el = findElement(kind, id);
+  if (!el) return;
+  dragState = {
+    mode, kind, id,
+    startX: e.clientX, startY: e.clientY,
+    startEl: { ...el },
+    // Snapshot of the handle's own on-screen rect at drag start (content-fit
+    // for a block) - scale-drag math uses this so the corner tracks the
+    // mouse under it, not the (possibly much larger) full canvas box.
+    startRect: kind === 'block' ? blockRect(id) : null,
+  };
+  window.addEventListener('mousemove', onDrag);
+  window.addEventListener('mouseup', onDragEnd);
+}
+
+function onDrag(e) {
+  if (!dragState) return;
+  const scale = canvasScale();
+  const dx = (e.clientX - dragState.startX) / scale;
+  const dy = (e.clientY - dragState.startY) / scale;
+  const isBlock = dragState.kind === 'block';
+  const target = isBlock ? currentBlockTransforms[dragState.id] : currentLogos.find(l => l.id === dragState.id);
+  if (!target) return;
+
+  if (dragState.mode === 'move') {
+    target.posX = Math.round(dragState.startEl.posX + dx);
+    target.posY = Math.round(dragState.startEl.posY + dy);
+  } else if (dragState.mode === 'scale') {
+    // Corner drag: when Zoom X/Y are LINKED (🔗, the default), scales
+    // uniformly using horizontal movement only, like Resolve's linked
+    // zoom handle - unchanged from before. When UNLINKED, width and
+    // height resize independently from the corner's own horizontal vs.
+    // vertical movement, so a block (or logo) can be dragged into an
+    // arbitrary non-uniform rectangle (e.g. the kill feed stretched tall
+    // and narrow) instead of only ever scaling proportionally.
+    // Uses the SAME box the handle itself is drawn at (content-sized for a
+    // block, via dragState.startRect captured in startDrag) so the corner
+    // tracks the mouse 1:1 at drag start - scaling factor is scale-invariant
+    // (shrinking a 400px box by the same factor as a 1261px box still
+    // yields the same zoom% change), so this is just as correct as the old
+    // always-canvas-sized math, but feels right under the cursor.
+    const startW = isBlock ? dragState.startRect.w : logoRect(dragState.startEl).w;
+    const startH = isBlock ? dragState.startRect.h : logoRect(dragState.startEl).h;
+    if (zoomLinked) {
+      const factor = Math.max(0.05, (startW / 2 + dx) / (startW / 2));
+      target.zoomX = Math.max(1, Math.round(dragState.startEl.zoomX * factor * 10) / 10);
+      target.zoomY = Math.max(1, Math.round(dragState.startEl.zoomY * factor * 10) / 10);
+    } else {
+      const factorX = Math.max(0.05, (startW / 2 + dx) / (startW / 2));
+      const factorY = Math.max(0.05, (startH / 2 + dy) / (startH / 2));
+      target.zoomX = Math.max(1, Math.round(dragState.startEl.zoomX * factorX * 10) / 10);
+      target.zoomY = Math.max(1, Math.round(dragState.startEl.zoomY * factorY * 10) / 10);
+    }
+  } else if (dragState.mode === 'rotate') {
+    const rect = isBlock ? blockRect(dragState.id) : logoRect(target);
+    const stageBounds = canvasStage.getBoundingClientRect();
+    const centerScreenX = stageBounds.left + rect.centerX * scale;
+    const centerScreenY = stageBounds.top + rect.centerY * scale;
+    const angle = Math.atan2(e.clientY - centerScreenY, e.clientX - centerScreenX) * (180 / Math.PI);
+    target.rotation = Math.round(angle + 90);
+  }
+  if (isBlock) applyBlockTransformLive(dragState.id, target);
+  renderElementHandles();
+  renderTransformPanel();
+}
+
+// Applies a block's transform directly to its own iframe WRAP element on
+// the canvas, live during drag - without this, dragging would move the
+// selection handle but the actual iframe behind it would stay frozen
+// until the drag commits (a real, previously-shipped bug: "elements don't
+// move until mouse release"). This only touches the wrap's own style
+// (position/size/rotate from the OUTSIDE), never the iframe's inner
+// document, so it works identically whether that iframe is showing a live
+// URL or a srcdoc draft.
+function applyBlockTransformLive(blockId, t) {
+  const wrap = canvasStage.querySelector('.block-iframe-wrap[data-block-id="' + blockId + '"]');
+  if (wrap) wrap.style.cssText = blockTransformStyle(t);
+}
+
+function onDragEnd() {
+  window.removeEventListener('mousemove', onDrag);
+  window.removeEventListener('mouseup', onDragEnd);
+  if (dragState) {
+    if (dragState.kind === 'block') {
+      updateBlockTransform(dragState.id, currentBlockTransforms[dragState.id]);
+    } else {
+      const logo = currentLogos.find(l => l.id === dragState.id);
+      if (logo) {
+        updateLogo(logo.id, {
+          zoomX: logo.zoomX, zoomY: logo.zoomY,
+          posX: logo.posX, posY: logo.posY,
+          rotation: logo.rotation,
+        });
+      }
+    }
+    dragState = null;
+  }
+}
+
+/* ---- Resolve-style Transform panel (Zoom X/Y + link, Position X/Y, Rotation) ---- */
+
+let zoomLinked = true;
+
+// Drag-to-scrub a number field by dragging sideways on its <label> -
+// ported from onlygoals.tv's goal editor (pointerdown on the label
+// captures the pointer, pointermove computes a draft value from
+// horizontal movement * step, shift = 0.2x finer, pointerup commits
+// once). `el` is the live object being edited (a block's transform
+// object, or a logo from currentLogos) - mutated directly during drag for
+// live visual feedback, same as dragging the on-canvas handle does.
+function wireScrub(fieldKey, input, stepPerPixel, el, isZoomField, isBlock, blockId) {
+  const row = input.closest('.xy-row');
+  const label = row.querySelector('label.scrub');
+  if (!label) return;
+  let scrub = null; // {startX, startValue, draft}
+
+  label.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    label.setPointerCapture(e.pointerId);
+    scrub = { startX: e.clientX, startValue: el[fieldKey], draft: null };
+    row.classList.add('scrubbing');
+  });
+  label.addEventListener('pointermove', (e) => {
+    if (!scrub) return;
+    const fineFactor = e.shiftKey ? 0.2 : 1;
+    const draft = scrub.startValue + (e.clientX - scrub.startX) * stepPerPixel * fineFactor;
+    scrub.draft = Math.round(draft * 100) / 100;
+    // Live visual feedback only - the input's own 'change' listener (which
+    // does the actual persist) is NOT fired here, only once on pointerup,
+    // so a drag doesn't flood the server with one PUT per pixel moved.
+    input.value = scrub.draft;
+    el[fieldKey] = scrub.draft;
+    if (isZoomField && zoomLinked) {
+      const pairKey = fieldKey === 'zoomX' ? 'zoomY' : 'zoomX';
+      el[pairKey] = scrub.draft;
+      const pairInput = document.getElementById(fieldKey === 'zoomX' ? 'tfZoomY' : 'tfZoomX');
+      if (pairInput) pairInput.value = scrub.draft;
+    }
+    if (isBlock) applyBlockTransformLive(blockId, el);
+    renderElementHandles();
+  });
+  const endScrub = () => {
+    if (!scrub) return;
+    const hadDraft = scrub.draft !== null;
+    scrub = null;
+    row.classList.remove('scrubbing');
+    if (hadDraft) input.dispatchEvent(new Event('change'));
+  };
+  label.addEventListener('pointerup', endScrub);
+  label.addEventListener('pointercancel', endScrub);
+}
+
+function renderTransformPanel() {
+  if (!currentId) {
+    transformPanel.innerHTML = '<div class="logos-disabled">Save the overlay once before adding elements.</div>';
+    return;
+  }
+  const isBlock = selectedElementKind === 'block';
+  const el = isBlock ? (currentBlockTransforms[selectedElementId] ? { id: selectedElementId, ...currentBlockTransforms[selectedElementId] } : null)
+    : currentLogos.find(l => l.id === selectedElementId);
+  if (!el) {
+    transformPanel.innerHTML = '<div class="logos-empty">Select a block or logo above to edit its transform.</div>';
+    return;
+  }
+  const positionLabel = isBlock ? 'Offset X' : 'Position X';
+  const positionLabelY = isBlock ? 'Offset Y' : 'Position Y';
+  const positionResetLabel = isBlock ? 'Reset to 0,0' : 'Center';
+  transformPanel.innerHTML = `
+    <div class="transform-section">
+      <h3>Zoom</h3>
+      <div class="xy-row" data-field="zoomX">
+        <label class="scrub" title="Drag sideways to change (Shift: finer)">Zoom X</label>
+        <input type="number" id="tfZoomX" step="0.5" value="${el.zoomX}">
+        <span class="unit">%</span>
+        <button id="linkZoom" class="${zoomLinked ? 'active' : ''}" title="Link Zoom X/Y">🔗</button>
+      </div>
+      <div class="xy-row" data-field="zoomY">
+        <label class="scrub" title="Drag sideways to change (Shift: finer)">Zoom Y</label>
+        <input type="number" id="tfZoomY" step="0.5" value="${el.zoomY}">
+        <span class="unit">%</span>
+      </div>
+    </div>
+    <div class="transform-section">
+      <h3>Position</h3>
+      <div class="xy-row" data-field="posX">
+        <label class="scrub" title="Drag sideways to change (Shift: finer)">${positionLabel}</label>
+        <input type="number" id="tfPosX" value="${el.posX}">
+        <span class="unit">px</span>
+      </div>
+      <div class="xy-row" data-field="posY">
+        <label class="scrub" title="Drag sideways to change (Shift: finer)">${positionLabelY}</label>
+        <input type="number" id="tfPosY" value="${el.posY}">
+        <span class="unit">px</span>
+      </div>
+      <button class="reset-btn" id="resetPos">${positionResetLabel}</button>
+    </div>
+    <div class="transform-section">
+      <h3>Rotation</h3>
+      <div class="xy-row" data-field="rotation">
+        <label class="scrub" title="Drag sideways to change (Shift: finer)">Angle</label>
+        <input type="number" id="tfRotation" step="1" value="${el.rotation}">
+        <span class="unit">&deg;</span>
+      </div>
+      <button class="reset-btn" id="resetRotation">Reset to 0&deg;</button>
+    </div>
+    <div class="transform-section">
+      <h3>Layer</h3>
+      <div class="layer-actions">
+        <button id="layerUp">↑ Forward</button>
+        <button id="layerDown">↓ Backward</button>
+      </div>
+    </div>
+  `;
+
+  const zoomXInput = document.getElementById('tfZoomX');
+  const zoomYInput = document.getElementById('tfZoomY');
+  const posXInput = document.getElementById('tfPosX');
+  const posYInput = document.getElementById('tfPosY');
+  const rotationInput = document.getElementById('tfRotation');
+  const linkBtn = document.getElementById('linkZoom');
+
+  linkBtn.addEventListener('click', () => {
+    zoomLinked = !zoomLinked;
+    linkBtn.classList.toggle('active', zoomLinked);
+  });
+
+  zoomXInput.addEventListener('change', () => {
+    const v = Number(zoomXInput.value);
+    el.zoomX = v;
+    if (zoomLinked) { el.zoomY = v; zoomYInput.value = v; }
+    applyTransformEdit(el, isBlock);
+  });
+  zoomYInput.addEventListener('change', () => {
+    const v = Number(zoomYInput.value);
+    el.zoomY = v;
+    if (zoomLinked) { el.zoomX = v; zoomXInput.value = v; }
+    applyTransformEdit(el, isBlock);
+  });
+  posXInput.addEventListener('change', () => { el.posX = Number(posXInput.value); applyTransformEdit(el, isBlock); });
+  posYInput.addEventListener('change', () => { el.posY = Number(posYInput.value); applyTransformEdit(el, isBlock); });
+  rotationInput.addEventListener('change', () => { el.rotation = Number(rotationInput.value); applyTransformEdit(el, isBlock); });
+
+  // DaVinci Resolve-style drag-to-scrub: click-drag sideways on a field's
+  // label to change its value, instead of typing it. Shift held = 5x
+  // finer. Each field commits once on pointerup by writing the new number
+  // into the input and dispatching 'change', reusing the exact same
+  // persistence path the typed-input listeners above already have.
+  wireScrub('zoomX', zoomXInput, 0.5, el, true, isBlock, selectedElementId);
+  wireScrub('zoomY', zoomYInput, 0.5, el, true, isBlock, selectedElementId);
+  wireScrub('posX', posXInput, 2, el, false, isBlock, selectedElementId);
+  wireScrub('posY', posYInput, 2, el, false, isBlock, selectedElementId);
+  wireScrub('rotation', rotationInput, 1, el, false, isBlock, selectedElementId);
+
+  document.getElementById('resetPos').addEventListener('click', () => {
+    el.posX = 0; el.posY = 0;
+    posXInput.value = 0; posYInput.value = 0;
+    applyTransformEdit(el, isBlock);
+  });
+  document.getElementById('resetRotation').addEventListener('click', () => {
+    el.rotation = 0;
+    rotationInput.value = 0;
+    applyTransformEdit(el, isBlock);
+  });
+  document.getElementById('layerUp').addEventListener('click', () => reorderElement(isBlock ? 'block' : 'logo', el.id, 1));
+  document.getElementById('layerDown').addEventListener('click', () => reorderElement(isBlock ? 'block' : 'logo', el.id, -1));
+}
+
+function applyTransformEdit(el, isBlock) {
+  if (isBlock) applyBlockTransformLive(selectedElementId, el);
+  renderElementHandles();
+  if (isBlock) {
+    updateBlockTransform(selectedElementId, {
+      zoomX: el.zoomX, zoomY: el.zoomY, posX: el.posX, posY: el.posY, rotation: el.rotation,
+    });
+  } else {
+    updateLogo(el.id, {
+      zoomX: el.zoomX, zoomY: el.zoomY, posX: el.posX, posY: el.posY, rotation: el.rotation,
+    });
+  }
+}
+
+/* ---- upload / CRUD ---- */
+
+btnAddLogo.addEventListener('click', () => {
+  if (!currentId) { setStatus('Save the overlay first'); return; }
+  logoFileInput.click();
+});
+
+logoFileInput.addEventListener('change', async () => {
+  const file = logoFileInput.files[0];
+  logoFileInput.value = '';
+  if (!file) return;
+
+  const formData = new FormData();
+  formData.append('logo', file);
+  let uploaded;
+  try {
+    const res = await fetch('/api/logos', { method: 'POST', body: formData });
+    if (!res.ok) throw new Error((await res.json()).error || 'Upload failed');
+    uploaded = await res.json();
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/overlays/' + currentId + '/logos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assetId: uploaded.assetId, nativeW: uploaded.width, nativeH: uploaded.height }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || 'Failed to add logo');
+    const overlay = await res.json();
+    currentLogos = overlay.logos;
+    selectElement('logo', currentLogos[currentLogos.length - 1].id);
+    renderLogosList();
+    renderElementHandles();
+    renderTransformPanel();
+    setStatus('Logo added');
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+  }
+});
+
+async function updateLogo(logoId, fields) {
+  try {
+    const res = await fetch('/api/overlays/' + currentId + '/logos/' + logoId, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || 'Update failed');
+    const overlay = await res.json();
+    currentLogos = overlay.logos;
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+  }
+}
+
+async function updateBlockTransform(blockId, fields) {
+  try {
+    const res = await fetch('/api/overlays/' + currentId + '/blocks/' + blockId + '/transform', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || 'Update failed');
+    const overlay = await res.json();
+    currentBlockTransforms = overlay.blockTransforms || {};
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+  }
+}
+
+function reorderElement(kind, id, direction) {
+  if (kind === 'block') {
+    const entries = Object.entries(currentBlockTransforms).sort((a, b) => (a[1].z ?? 0) - (b[1].z ?? 0));
+    const idx = entries.findIndex(([bid]) => bid === id);
+    const swapIdx = idx + direction;
+    if (swapIdx < 0 || swapIdx >= entries.length) return;
+    const [aId, aT] = entries[idx], [bId, bT] = entries[swapIdx];
+    const az = aT.z, bz = bT.z;
+    Promise.all([
+      updateBlockTransform(aId, { z: bz }),
+      updateBlockTransform(bId, { z: az }),
+    ]).then(() => { renderBlockIframes(); renderElementHandles(); renderTransformPanel(); });
+    return;
+  }
+  const sorted = currentLogos.slice().sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
+  const idx = sorted.findIndex(l => l.id === id);
+  const swapIdx = idx + direction;
+  if (swapIdx < 0 || swapIdx >= sorted.length) return;
+  const a = sorted[idx], b = sorted[swapIdx];
+  const az = a.z, bz = b.z;
+  Promise.all([
+    updateLogo(a.id, { z: bz }),
+    updateLogo(b.id, { z: az }),
+  ]).then(() => loadOverlay(currentId));
+}
+
+async function deleteLogo(logoId) {
+  if (!confirm('Delete this logo?')) return;
+  try {
+    const res = await fetch('/api/overlays/' + currentId + '/logos/' + logoId, { method: 'DELETE' });
+    if (!res.ok) throw new Error((await res.json()).error || 'Delete failed');
+    const overlay = await res.json();
+    currentLogos = overlay.logos;
+    if (selectedElementKind === 'logo' && selectedElementId === logoId) selectElement(null, null);
+    renderLogosList();
+    renderElementHandles();
+    renderTransformPanel();
+    setStatus('Logo deleted');
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+  }
+}
+
+(async function init() {
+  fitCanvas();
+  // Re-fit one frame later too - at this point in page load the flex
+  // layout engine may not have given .pane.preview (and therefore
+  // canvasWrap) its final size yet, so the very first fitCanvas() call
+  // above can under-measure. A single rAF is enough since nothing async
+  // happens between layout settling and this firing.
+  requestAnimationFrame(fitCanvas);
+  await loadList();
+  const lastId = recallLastOverlay();
+  if (lastId) {
+    listEl.value = lastId; // reflect the restored selection in the dropdown even if loadOverlay below fails
+    loadOverlay(lastId);
+  } else {
+    loadOverlay(null);
+  }
+})();
+</script>
+
+</body>
+</html>
