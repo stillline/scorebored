@@ -75,6 +75,12 @@ const defaultGameState = {
   // since it's plain readable text sitting over the live HDMI output, not
   // something to leave on for a real broadcast. See setDebugOverlay.
   debugOverlay: false,
+  // Takes the scorebug (preset or overlay) off /display entirely, leaving
+  // the stage black so the ATEM's luma key shows clean program. The
+  // active item is kept, so showing it again is one click with no
+  // re-pick. From the Scorebug panel on /control and /dashboard; see
+  // setScorebugHidden.
+  scorebugHidden: false,
   ladder: { active: false, tournament: null }, // bracket ladder layer on /display (setLadder); tournament uuid or null = the sync's
   commercialBreak: {
     active: false,
@@ -1965,6 +1971,16 @@ io.on('connection', (socket) => {
   socket.on('reloadDisplay', () => {
     console.log('Display reload requested from control');
     io.emit('reloadDisplay');
+  });
+
+  // Hide/show the scorebug layer on /display without touching activeKind/
+  // activeId - the operator's selection survives, the stage just goes to
+  // the keyed-out black. Does not affect the ladder or a commercial break.
+  socket.on('setScorebugHidden', (data) => {
+    commitGameState(() => {
+      gameState.scorebugHidden = !!(data && data.hidden);
+    });
+    console.log(`Scorebug ${gameState.scorebugHidden ? 'HIDDEN from' : 'shown on'} display`);
   });
 
   socket.on('setDebugOverlay', (data) => {

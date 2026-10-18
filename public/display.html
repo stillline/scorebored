@@ -308,6 +308,22 @@ async function renderDisplay(gameState){
   gameState._currentClock = gameState.clock ? { ...gameState.clock, localAnchorAt: gameState._clockAnchorAt } : null;
   latestGameState = gameState;
 
+  // Operator turned the scorebug off (gameState.scorebugHidden, from the
+  // Scorebug panel on /control or /dashboard): hide both layers and leave
+  // the stage black for the luma key. Neither layer is torn down - the
+  // overlay iframe keeps its src and live socket, and shownOverlayId is
+  // left alone, so showing it again is instant and doesn't reload the
+  // overlay page. The ladder and commercial break are separate layers and
+  // unaffected.
+  if (gameState.scorebugHidden) {
+    presetLayerEl.style.display = 'none';
+    overlayFrameEl.style.display = 'none';
+    debugState.renderCount++;
+    debugState.renderedVersion = 'hidden (scorebug off)';
+    renderDebugOverlay();
+    return;
+  }
+
   if (gameState.activeKind === 'overlay' && gameState.activeId) {
     // /overlay/:id is a fully self-contained live page (own socket
     // connection, own overlay-bind.js data binding) - just point the

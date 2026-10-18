@@ -295,6 +295,18 @@
             background: #f57c00;
         }
 
+        .action-button.hiding {
+            background: #c62828;
+        }
+
+        .action-button.hiding:hover {
+            background: #b71c1c;
+        }
+
+        .scorebug-status.hidden-off {
+            color: #ef5350;
+        }
+
         .status {
             text-align: center;
             margin-top: 20px;
@@ -663,6 +675,7 @@
                 <option value="">Default (built-in fallback)</option>
             </select>
             <div class="scorebug-status" id="scorebugStatus">Nothing active - showing built-in fallback layout</div>
+            <button type="button" class="action-button" id="scorebugHideBtn" style="margin-top:10px;width:100%;" title="Take the scorebug off the display (stage goes black, keyed out by the ATEM). The selection above is kept.">Hide scorebug from stream</button>
             <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px;color:#ccc;">
                 <input type="checkbox" id="debugOverlayToggle">
                 Show debug panel on display (socket status, render count)
@@ -823,6 +836,7 @@
         // to create new ones.
         const scorebugSelector = document.getElementById('scorebugSelector');
         const scorebugStatus = document.getElementById('scorebugStatus');
+        const scorebugHideBtn = document.getElementById('scorebugHideBtn');
         let currentActiveKind = null;
         let currentActiveId = null;
         let lastGameState = null;
@@ -878,16 +892,29 @@
             if (scorebugSelector.value !== selectorValue) {
                 scorebugSelector.value = selectorValue;
             }
-            if (currentActiveId) {
-                const selectedOption = scorebugSelector.options[scorebugSelector.selectedIndex];
-                const name = selectedOption ? selectedOption.textContent : currentActiveId;
+            const hidden = !!gameState.scorebugHidden;
+            const selectedOption = scorebugSelector.options[scorebugSelector.selectedIndex];
+            const name = currentActiveId
+                ? (selectedOption ? selectedOption.textContent : currentActiveId)
+                : 'built-in fallback layout';
+            scorebugStatus.classList.toggle('hidden-off', hidden);
+            if (hidden) {
+                scorebugStatus.textContent = '○ Hidden - nothing on display (' + name + ' selected)';
+                scorebugStatus.classList.remove('active');
+            } else if (currentActiveId) {
                 scorebugStatus.textContent = '● Live: ' + name;
                 scorebugStatus.classList.add('active');
             } else {
                 scorebugStatus.textContent = 'Nothing active - showing built-in fallback layout';
                 scorebugStatus.classList.remove('active');
             }
+            scorebugHideBtn.textContent = hidden ? 'Show scorebug on stream' : 'Hide scorebug from stream';
+            scorebugHideBtn.classList.toggle('hiding', hidden);
         }
+
+        scorebugHideBtn.addEventListener('click', () => {
+            socket.emit('setScorebugHidden', { hidden: !(lastGameState && lastGameState.scorebugHidden) });
+        });
 
         scorebugSelector.addEventListener('change', () => {
             const [kind, id] = scorebugSelector.value ? scorebugSelector.value.split(':') : [null, null];
