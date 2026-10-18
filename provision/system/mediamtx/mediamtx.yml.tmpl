@@ -1,0 +1,54 @@
+# MediaMTX on the venue Pi: takes the ATEM's RTMP publish and forwards it,
+# natively over SRT, to the court relay chosen with `court-target`.
+# GENERATED FILE: /usr/local/bin/court-target writes it from
+# /etc/mediamtx/mediamtx.yml.tmpl and /etc/srt-relay/relays.env. Edit the
+# template, not this file. It holds the relay secrets: root:mediamtx 640.
+# Production since the 2026-10-17 cutover: RTMP on 1935, nginx-rtmp retired
+# (stopped and disabled, kept for rollback). See scorebored docs/relay.md.
+#
+# logLevel warn: at info MediaMTX logs the full forward URL, secrets included,
+# on every (re)connect. Operational state comes from the API instead.
+logLevel: warn
+logDestinations: [stdout]
+readTimeout: 10s
+writeTimeout: 10s
+writeQueueSize: 2048
+
+api: yes
+apiAddress: 127.0.0.1:9997
+metrics: no
+pprof: no
+playback: no
+
+authMethod: internal
+authInternalUsers:
+  - user: any
+    pass:
+    ips: ['127.0.0.1', '::1']
+    permissions:
+      - action: publish
+      - action: read
+      - action: api
+  - user: any
+    pass:
+    ips: ['10.42.0.0/24']          # the ATEM's LAN (switcher_net)
+    permissions:
+      - action: publish
+
+rtsp: no
+rtmp: yes
+rtmpAddress: :1935                 # the ATEM's custom URL: rtmp://10.42.0.1/live
+rtmpEncryption: "no"
+hls: no
+webrtc: no
+srt: no
+moq: no
+
+pathDefaults:
+  source: publisher
+  maxReaders: 4
+
+paths:
+  ~^live(/.*)?$:                   # the ATEM publishes to rtmp://10.42.0.1/live/<key>
+    # target: __TARGET__
+__FORWARD__

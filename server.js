@@ -12,6 +12,7 @@ const { SyncManager } = require('./lib/sync');
 const { startSpeedifyStats, registerSpeedifySocketHandlers } = require('./lib/speedify');
 const { registerRtmpSocketHandlers } = require('./lib/rtmp');
 const { registerSrtSocketHandlers } = require('./lib/srt');
+const { registerRelayRoutes } = require('./lib/relay');
 const { createAtemControl } = require('./lib/atem');
 const { registerNetworkSocketHandlers } = require('./lib/network');
 
@@ -503,6 +504,9 @@ app.get('/control', (req, res) => {
 app.get('/overlay-editor', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'overlay-editor.html'));
 });
+
+// Pi relay pages (/relay, /profiles): MediaMTX forward target and stream-key profiles. lib/relay.js.
+registerRelayRoutes(app);
 
 app.get('/network', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'network.html'));
@@ -2341,6 +2345,7 @@ server.listen(PORT, () => {
   console.log(`Display: http://localhost:${PORT}/display`);
   console.log(`Control: http://localhost:${PORT}/control`);
   console.log(`Network: http://localhost:${PORT}/network`);
+  console.log(`Relay:   http://localhost:${PORT}/relay`);
   console.log(`AP Channel: http://localhost:${PORT}/apchannel`);
   console.log(`Bracket:    http://localhost:${PORT}/bracket`);
   console.log(`ATEM IP: ${ATEM_IP} | Graphics Input: ${GRAPHICS_INPUT} | Downstream Key: ${DOWNSTREAM_KEY}`);

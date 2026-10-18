@@ -20,3 +20,6 @@ public/logos/
 overlays/*
 !overlays/overlay_daca270d.json
 !overlays/templates/
+
+# Relay profiles: stream keys (lib/relay.js), mode 600
+relay-profiles.json

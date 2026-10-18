@@ -26,13 +26,13 @@ keyboard-setup.service
 lightdm.service
 logrotate.timer
 man-db.timer
+mediamtx.service
 ModemManager.service
 NetworkManager-dispatcher.service
 NetworkManager.service
 NetworkManager-wait-online.service
 nfs-blkmap.service
 nfs-client.target
-nginx.service
 regenerate_ssh_host_keys.service
 remote-fs.target
 rp1-test.service

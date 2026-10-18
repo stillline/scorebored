@@ -1,0 +1,56 @@
+#!/bin/bash
+# relay-target courta|courtb|off|status
+# relay-target profile <id> <label>      (destination URL, secrets included, on stdin)
+#
+# Chooses where the Pi forwards the ATEM's stream, by regenerating
+# /etc/mediamtx/mediamtx.yml from mediamtx.yml.tmpl with one native MediaMTX
+# `forward` entry (SRT to a court relay, or RTMP/RTMPS to a profile such as a
+# YouTube channel). MediaMTX watches the file and hot-reloads the forward list
+# without touching the ATEM's publish connection. Run as root (sudo, from
+# scorebored lib/relay.js). Court secrets come from /etc/srt-relay/relays.env;
+# a profile's URL comes on stdin so the key is never on a command line. The
+# generated file is root:mediamtx 640. Nothing secret is printed.
+set -eu
+ENV_FILE=/etc/srt-relay/relays.env
+TARGET_FILE=/etc/srt-relay/target
+TMPL=/etc/mediamtx/mediamtx.yml.tmpl
+OUT=/etc/mediamtx/mediamtx.yml
+LATENCY_MS=4000
+
+target=${1:-status}
+label=$target
+case "$target" in
+  status) cat "$TARGET_FILE" 2>/dev/null || echo off; exit 0 ;;
+  courta|courtb)
+    key=$(tr a-z A-Z <<< "$target")
+    # shellcheck disable=SC1090
+    . "$ENV_FILE"
+    pp_var=${key}_PASSPHRASE; pw_var=${key}_PUBLISH_PASS
+    pp=${!pp_var:-}; pw=${!pw_var:-}
+    [[ -n $pp && -n $pw ]] || { echo "missing $pp_var or $pw_var in $ENV_FILE" >&2; exit 1; }
+    url="srt://$target.onlygoals.tv:8890?streamid=publish:$target:$target:$pw&passphrase=$pp&latency=$LATENCY_MS" ;;
+  profile)
+    id=${2:?profile id}; label="profile:$id ${3:-}"
+    [[ $id =~ ^[A-Za-z0-9_-]{1,40}$ ]] || { echo "bad profile id" >&2; exit 2; }
+    IFS= read -r url || true
+    [[ $url =~ ^rtmps?://[^[:space:]\"]+$ ]] || { echo "profile URL on stdin must be rtmp:// or rtmps://" >&2; exit 2; }
+    target="profile:$id" ;;
+  off) url= ;;
+  *) echo "usage: relay-target courta|courtb|off|status | profile <id> <label> (URL on stdin)" >&2; exit 2 ;;
+esac
+
+if [[ -n $url ]]; then forward=$'    forward:\n      - dest: "'"$url"'"'; else forward="    forward: []"; fi
+
+tmp=$(mktemp "$OUT.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+python3 -I - "$TMPL" "$tmp" "$label" "$forward" <<'PY'
+import sys
+tmpl, out, label, forward = sys.argv[1:5]
+s = open(tmpl).read().replace('__TARGET__', label).replace('__FORWARD__', forward)
+open(out, 'w').write(s)
+PY
+chown root:mediamtx "$tmp"; chmod 640 "$tmp"
+/usr/local/bin/mediamtx --validate-conf="$tmp" >/dev/null
+mv -f "$tmp" "$OUT"; trap - EXIT
+echo "$target" > "$TARGET_FILE"; chmod 644 "$TARGET_FILE"
+echo "target set to $target"

@@ -70,6 +70,11 @@ relay.
 
 ## SRT relay to the cloud (`lib/srt.js`, `/usr/local/bin/srt-push`)
 
+> **Superseded 2026-10-17.** The single relay endpoint this section pushes to is
+> gone and the Pi now runs MediaMTX with native SRT forwarding to the two court
+> relays, driven from `/relay`: see [relay.md](relay.md). The nginx-rtmp chain
+> below stays installed on port 1935 until the cutover, then goes.
+
 The second output, for the chain ATEM → Pi → SRT → cloud relay (AWS,
 `srt://54.190.49.121:8890`, `relay.onlygoals.tv`) → YouTube/Twitch. The relay
 decides where the stream goes; the Pi only ever sends to the relay. Added

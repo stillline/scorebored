@@ -48,6 +48,7 @@ display), see [docs/kiosk-display.md](docs/kiosk-display.md).
   Shufflepolo live score/bracket feeds
 - **[Scorebug editor](docs/scorebug-editor.md)** — visual design and
   preset system for the on-air scoreboard
+- **[Pi relay](docs/relay.md)** — MediaMTX on the Pi, native SRT forward to the court relays or RTMPS to a stream-key profile; `/relay` and `/profiles`
 - **[Network dashboard](docs/network.md)** — Wi-Fi AP, Speedify bonding,
   RTMP relay, iPhone tether pairing
 - **[Kiosk display & systemd service](docs/kiosk-display.md)** — Pi
@@ -136,6 +137,7 @@ Clean scoreboard output — fullscreen this on the display machine.
 |------|---------|
 | `gamestate.json` | Live scoreboard state (scores, colors, ATEM status, active matchup index) |
 | `bracket.json` | Tournament schedule with all matchups, colors, and final scores |
+| `relay-profiles.json` | Stream-key profiles for the Pi relay page (see [docs/relay.md](docs/relay.md)); mode 600, not tracked |
 | `overlays/` | Scorebug designs with versions and placed logos (see [docs/scorebug-editor.md](docs/scorebug-editor.md)); only the shipped default is tracked |
 | `presets/` | Older scorebug presets |
 | `public/logos/` | Uploaded team logos |

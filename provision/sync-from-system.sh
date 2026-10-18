@@ -21,6 +21,12 @@ copy() { # copy <src> <dest-relative>  (sudo read, owned by user in the repo)
 copy /boot/firmware/config.txt             boot/config.txt
 copy /boot/firmware/cmdline.txt            boot/cmdline.txt
 
+# Pi relay (docs/relay.md): MediaMTX unit, config TEMPLATE and the target script.
+# Not the generated /etc/mediamtx/mediamtx.yml nor /etc/srt-relay/*: they hold secrets.
+copy /etc/systemd/system/mediamtx.service  systemd/mediamtx.service
+copy /etc/mediamtx/mediamtx.yml.tmpl       mediamtx/mediamtx.yml.tmpl
+copy /usr/local/bin/relay-target           usr-local-bin/relay-target
+
 # systemd: units we own and drop-ins we added
 for u in scorebored atem-discovery-relay companion companion-keyboard-controller; do
     copy /etc/systemd/system/$u.service    systemd/$u.service
